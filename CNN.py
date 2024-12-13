@@ -2,6 +2,7 @@ import torch
 import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
+import Dataset
 
 class CNN(nn.Module):
     def __init__(self, input_channels, num_classes, conv_layers, size_img, pool_size=2):
@@ -23,6 +24,8 @@ class CNN(nn.Module):
         self.fc = nn.Linear(int(in_channels), num_classes)
     
     def forward(self, x):
+        if len(x.shape) == 3:
+            x = x.unsqueeze(0)
         for conv in self.conv_layers:
             x = F.relu(conv(x))
             x = F.avg_pool2d(x, self.pool_size)
@@ -37,12 +40,60 @@ def main():
         (64, 3, 1, 1),
         (128, 3, 1, 1)
     ]
-
+    
+    print('Random example')
     model = CNN(input_channels=3, num_classes=10, conv_layers=conv_layers, size_img=64)
     print(model)
 
-    # example
     input_tensor = torch.randn(1, 3, 64, 64)
     output = model(input_tensor)
-    print(output.shape)  
+    print(output.shape)
+
+    print('CIFAR10 example')
+    dataset = Dataset.CIFAR10Dataset()
+    num_classes = np.unique(dataset.y_train).shape[0]
+    input_channels, size_img, _ = dataset.get_image_size()
+    model = CNN(input_channels=input_channels, num_classes=num_classes, conv_layers=conv_layers, size_img=size_img)
+    output = model(dataset.x_train[0])
+    print(output.shape)
+    output = model(dataset.x_train[0:10])
+    print(output.shape)
+
+    print('CIFAR10 grayscale example')
+    dataset = Dataset.CIFAR10Dataset()
+    dataset.downscale(50)
+    num_classes = np.unique(dataset.y_train).shape[0]
+    input_channels, size_img, _ = dataset.get_image_size()
+    model = CNN(input_channels=input_channels, num_classes=num_classes, conv_layers=conv_layers, size_img=size_img)
+    output = model(dataset.x_train[0])
+    print(output.shape)
+    output = model(dataset.x_train[0:10])
+    print(output.shape)
+
+    print('CIFAR10 grayscale example')
+    dataset = Dataset.CIFAR10Dataset()
+    dataset.to_grayscale()
+    num_classes = np.unique(dataset.y_train).shape[0]
+    input_channels, size_img, _ = dataset.get_image_size()
+    model = CNN(input_channels=input_channels, num_classes=num_classes, conv_layers=conv_layers, size_img=size_img)
+    output = model(dataset.x_train[0])
+    print(output.shape)
+    output = model(dataset.x_train[0:10])
+    print(output.shape)
+
+    print('rescaled CIFAR10 grayscale example')
+    dataset = Dataset.CIFAR10Dataset()
+    dataset.to_grayscale()
+    dataset.downscale(50)
+    num_classes = np.unique(dataset.y_train).shape[0]
+    input_channels, size_img, _ = dataset.get_image_size()
+    model = CNN(input_channels=input_channels, num_classes=num_classes, conv_layers=conv_layers, size_img=size_img)
+    output = model(dataset.x_train[0])
+    print(output.shape)
+    output = model(dataset.x_train[0:10])
+    print(output.shape)
+
+if __name__ == '__main__':
+    main()
+
 
