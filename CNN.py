@@ -38,123 +38,106 @@ def count_model_parameters(model):
     total_params = sum(param.numel() for param in model.parameters())
     return total_params
 
-class function_f():
-    def __init__(self, model, x_train):
+class function_f_and_Sigma():
+    def __init__(self, model, x_train, y_train):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         self.model = model.to(device)
-        self.dataset = x_train.to(device)
+        self.x_train = x_train.to(device)
+        self.y_train = y_train.to(device)
+        self.criterion = nn.CrossEntropyLoss(reduction='none')
 
-    def apply(self):
-        result = self.model(self.dataset).mean(axis=0) 
+        self.loss = None
+        self.expected_value_loss = None
+        self.expected_loss_grad = None
+        self.sigma = None
 
-        # Calculate Loss
-        loss = result.mean()
-        return loss
+        self.already_computed_loss = False
+        self.already_computed_expected_loss_grad = False
+        self.already_computed_sigma = False
+
+        self.number_of_parameters = count_model_parameters(self.model)
     
     def update_model_params(self, new_params):
         self.model.load_state_dict(new_params)
+
+        self.already_computed_loss = False
+        self.already_computed_expected_loss_grad = False
+        self.already_computed_sigma = False
+
+    def apply_f(self):
+        if self.already_computed_loss:
+            return self.f
+        
+        result = self.model(self.x_train)
+
+        # Calculate Loss
+        self.loss = self.criterion(result, self.y_train)
+        
+        # Mean over dataset
+        self.expected_value_loss = self.loss.mean(axis=0) 
+        self.already_computed_loss = True
+
+        assert self.loss.shape[0] == self.x_train.shape[0], 'Loss shape is not the same as the number of samples'
+        assert self.expected_value_loss.dim() == 0, 'Expected loss shape is not the same as the number of samples'
+
+        return self.expected_value_loss
     
-    def compute_gradients(self):
+    def compute_gradients_f(self):
+        if self.already_computed_expected_loss_grad:
+            return self.f_grad
+        
         self.model.zero_grad()
-        output = self.apply()
+
+        if self.already_computed_loss:
+            output = self.expected_value_loss
+        else:
+            output = self.apply_f()
+
         gradients = torch.autograd.grad(output.mean(), self.model.parameters(), create_graph=True)
-        gradients = torch.cat([grad.view(-1) for grad in gradients])
-        return gradients
+        gradients = torch.cat([grad.reshape(-1) for grad in gradients])
+
+        self.expected_loss_grad = gradients
+        self.already_computed_expected_loss_grad = True
+
+        assert self.expected_loss_grad.shape[0] == self.number_of_parameters, 'Expected loss gradient shape is not the same as the number of parameters'
+
+        return self.expected_loss_grad
     
-def test():
-    conv_layers = [
-        (32, 3, 1, 1),  # filter number, kernel size, stride, padding
-        (64, 3, 1, 1),
-        (128, 3, 1, 1)
-    ]
+    def apply_sigma(self):
+        if self.already_computed_sigma:
+            return self.sigma
+
+        Sigma = 0
+        for l in self.loss:
+            self.model.zero_grad()
+            l_grad = torch.autograd.grad(l, self.model.parameters(), create_graph=True)
+            l_grad = torch.cat([grad.reshape(-1) for grad in l_grad])
+
+            Sigma += torch.ger(l_grad-self.expected_loss_grad, l_grad-self.expected_loss_grad)
+
+        self.sigma = Sigma / self.loss.shape[0]
+        self.already_computed_sigma = True
+
+        assert self.sigma.shape == (self.number_of_parameters, self.number_of_parameters), 'Sigma shape is not the same as the number of parameters'
+
+        return self.sigma
     
-    print('Random example')
-    model = CNN(input_channels=3, num_classes=10, conv_layers=conv_layers, size_img=64)
-    print(model)
+    def compute_gradients_sigma_diag(self):
+        if not self.already_computed_sigma:
+            self.apply_sigma()
+        
+        sigma_diag = torch.diag(self.sigma)
+        grad_sigma_diag = []
+        for d in sigma_diag:
+            self.model.zero_grad()
+            gradients = torch.autograd.grad(d, self.model.parameters(), create_graph=True)
+            gradients = torch.cat([grad.reshape(-1) for grad in gradients])
+            grad_sigma_diag.append(gradients)
+        self.grad_sigma_diag = torch.stack(grad_sigma_diag)
 
-    input_tensor = torch.randn(1, 3, 64, 64)
-    output = model(input_tensor)
-    print(output.shape)
+        assert self.grad_sigma_diag.shape == (self.number_of_parameters, self.number_of_parameters), 'Gradient of Sigma diagonal shape is not the same as the number of parameters'
 
-    print('CIFAR10 example')
-    dataset = Dataset.CIFAR10Dataset()
-    num_classes = np.unique(dataset.y_train).shape[0]
-    input_channels, size_img, _ = dataset.get_image_size()
-    model = CNN(input_channels=input_channels, num_classes=num_classes, conv_layers=conv_layers, size_img=size_img)
-    output = model(dataset.x_train[0])
-    print(output.shape)
-    output = model(dataset.x_train[0:10])
-    print(output.shape)
-
-    print('CIFAR10 grayscale example')
-    dataset = Dataset.CIFAR10Dataset()
-    dataset.downscale(50)
-    num_classes = np.unique(dataset.y_train).shape[0]
-    input_channels, size_img, _ = dataset.get_image_size()
-    model = CNN(input_channels=input_channels, num_classes=num_classes, conv_layers=conv_layers, size_img=size_img)
-    output = model(dataset.x_train[0])
-    print(output.shape)
-    output = model(dataset.x_train[0:10])
-    print(output.shape)
-
-    print('CIFAR10 grayscale example')
-    dataset = Dataset.CIFAR10Dataset()
-    dataset.to_grayscale()
-    num_classes = np.unique(dataset.y_train).shape[0]
-    input_channels, size_img, _ = dataset.get_image_size()
-    model = CNN(input_channels=input_channels, num_classes=num_classes, conv_layers=conv_layers, size_img=size_img)
-    output = model(dataset.x_train[0])
-    print(output.shape)
-    output = model(dataset.x_train[0:10])
-    print(output.shape)
-
-    print('rescaled CIFAR10 grayscale example')
-    dataset = Dataset.CIFAR10Dataset()
-    dataset.to_grayscale()
-    dataset.downscale(50)
-    num_classes = np.unique(dataset.y_train).shape[0]
-    input_channels, size_img, _ = dataset.get_image_size()
-    model = CNN(input_channels=input_channels, num_classes=num_classes, conv_layers=conv_layers, size_img=size_img)
-    output = model(dataset.x_train[0])
-    print(output.shape)
-    output = model(dataset.x_train[0:10])
-    print(output.shape)
-
-if __name__ == '__main__':
-    dataset = Dataset.CIFAR10Dataset()
-    dataset.to_grayscale()
-    dataset.downscale(50)
-    num_classes = np.unique(dataset.y_train).shape[0]
-    input_channels, size_img, _ = dataset.get_image_size()
-    conv_layers = [
-        (32, 3, 1, 1),  # filter number, kernel size, stride, padding
-        (32, 3, 1, 1),
-        (32, 3, 1, 1)
-    ]
-    model = CNN(input_channels=input_channels, num_classes=num_classes, conv_layers=conv_layers, size_img=size_img)
-    total_params = count_model_parameters(model)
-    print(f"Total number of parameters: {total_params}")
-
-    f = function_f(model, dataset.x_train)
-    start = time.time()
-    aux = f.apply()
-    print(f'Elapsed time: {time.time() - start:.2f}s, calculated value: {aux:.2f}')
-
-    start = time.time()
-    grad = f.compute_gradients()
-    print(f'Elapsed time: {time.time() - start:.2f}s, gradient size: {grad.shape[0]}')
-    
-
-    model1 = CNN(input_channels=input_channels, num_classes=num_classes, conv_layers=conv_layers, size_img=size_img)
-    f.update_model_params(model1.state_dict())
-    start = time.time()
-    aux = f.apply()
-    print(f'Elapsed time: {time.time() - start:.2f}s, calculated value: {aux}')
-
-    start = time.time()
-    grad1 = f.compute_gradients()
-    print(f'Elapsed time: {time.time() - start:.2f}s, old grad != new grad: {(grad != grad1).any()}')
-
+        return self.grad_sigma_diag
 
 
