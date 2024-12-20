@@ -1,4 +1,4 @@
-from CNN import CNN, function_f_and_Sigma, count_model_parameters
+from CNN import CNN, function_f_and_Sigma, count_model_parameters, Train_n_times
 from Dataset import CIFAR10Dataset
 
 import torch
@@ -124,4 +124,19 @@ def Test_for_f_and_Sigma():
     print(f'Elapsed time: {time.time() - start:.2f}s, grad sigma diag shape: {grad_sigma_diag.shape}')
 
 
-Test_for_f_and_Sigma()
+def Test_Train_n_times():
+    dataset = CIFAR10Dataset()
+    dataset.to_grayscale()
+    dataset.downscale(50)
+    num_classes = np.unique(dataset.y_train).shape[0]
+    input_channels, size_img, _ = dataset.get_image_size()
+    conv_layers = [
+        (2, 3, 1, 1),  
+        (2, 3, 1, 1),
+        (2, 3, 1, 1)
+    ]
+    model = CNN(input_channels=input_channels, num_classes=num_classes, conv_layers=conv_layers, size_img=size_img)
+
+    Train = Train_n_times(model, dataset, steps=100, lr=0.01, optimizer_name='ADAM')
+    FinalDict = Train.train_n_times(1)
+    breakpoint()

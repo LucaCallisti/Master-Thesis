@@ -1,5 +1,5 @@
 import numpy as np
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, TensorDataset, Dataset
 from tensorflow.keras.datasets import cifar10
 import cv2
 import matplotlib.pyplot as plt
@@ -7,6 +7,7 @@ import torch
 
 class CIFAR10Dataset:
     def __init__(self):
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         (self.x_train, self.y_train), (self.x_test, self.y_test) = cifar10.load_data()
         self.x_train = torch.tensor(self.x_train, dtype=torch.float32).permute(0, 3, 1, 2)
         self.x_test = torch.tensor(self.x_test, dtype=torch.float32).permute(0, 3, 1, 2)
@@ -59,9 +60,15 @@ class CIFAR10Dataset:
     def get_image_size(self):
         return self.x_train[0].shape
 
-    def dataloader(self, batch_size, shuffle=True):
-        tensor_dataset = TensorDataset(self.x_train, self.y_train)
-        dataloader = DataLoader(tensor_dataset, batch_size=batch_size, shuffle=shuffle)
+    def dataloader(self, batch_size, steps, seed = 0):
+        
+        torch.manual_seed(seed)
+        indices = torch.randint(0, self.x_train.shape[0], (batch_size * steps,))
+        sampled_x_train = self.x_train[indices]
+        sampled_y_train = self.y_train[indices]
+
+        tensor_dataset = TensorDataset(sampled_x_train, sampled_y_train)
+        dataloader = DataLoader(tensor_dataset, batch_size=batch_size, shuffle=False)
         return dataloader
 
 
