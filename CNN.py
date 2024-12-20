@@ -141,3 +141,26 @@ class function_f_and_Sigma():
         return self.grad_sigma_diag
 
 
+class Train_n_times():
+    def __init__(self, model, x_train, y_train, num_epochs=100, lr=0.01):
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.model = model.to(self.device)
+        self.x_train = x_train.to(self.device)
+        self.y_train = y_train.to(self.device)
+        self.num_epochs = num_epochs
+        self.lr = lr
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
+        self.criterion = nn.CrossEntropyLoss()
+    
+    def train(self):
+        for epoch in range(self.num_epochs):
+            self.model.train()
+            self.optimizer.zero_grad()
+            output = self.model(self.x_train)
+            loss = self.criterion(output, self.y_train)
+            loss.backward()
+            self.optimizer.step()
+            print(f'Epoch {epoch+1}/{self.num_epochs}, Loss: {loss.item():.4f}')
+    
+    def get_model(self):
+        return self.model

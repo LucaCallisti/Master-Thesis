@@ -1,5 +1,5 @@
 import numpy as np
-import tensorflow as tf
+from torch.utils.data import DataLoader, TensorDataset
 from tensorflow.keras.datasets import cifar10
 import cv2
 import matplotlib.pyplot as plt
@@ -59,10 +59,10 @@ class CIFAR10Dataset:
     def get_image_size(self):
         return self.x_train[0].shape
 
-    def dataloader(self, batch_size):
-        dataset = tf.data.Dataset.from_tensor_slices((self.x_train, self.y_train))
-        dataset = dataset.shuffle(buffer_size=1024).batch(batch_size)
-        return dataset
+    def dataloader(self, batch_size, shuffle=True):
+        tensor_dataset = TensorDataset(self.x_train, self.y_train)
+        dataloader = DataLoader(tensor_dataset, batch_size=batch_size, shuffle=shuffle)
+        return dataloader
 
 
 
