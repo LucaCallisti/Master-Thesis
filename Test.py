@@ -1,4 +1,4 @@
-from CNN import CNN, Train_n_times
+from CNN import CNN, Train_n_times, Large_CNN
 from SDE import RMSprop_SDE
 from Dataset import CIFAR10Dataset
 
@@ -179,11 +179,13 @@ def Test_Train_n_times():
     plt.show()
     breakpoint()
 
-Test_Train_n_times()
+# Test_Train_n_times()
 
 
 def Test_SDE():
+    start = time.time()
     dataset = CIFAR10Dataset()
+
     dataset.to_grayscale()
     dataset.downscale(50)
     num_classes = np.unique(dataset.y_train).shape[0]
@@ -194,29 +196,27 @@ def Test_SDE():
         (1, 3, 1, 1),
         (1, 3, 1, 1)
     ]
-    conv_layers = [
-        (4, 3, 1, 1),  
-        (8, 3, 1, 1),
-        (16, 3, 1, 1),
-        (32, 3, 1, 1)
-    ]
+    # conv_layers = [
+    #     (4, 3, 1, 1),  
+    #     (8, 3, 1, 1),
+    #     (16, 3, 1, 1),
+    #     (32, 3, 1, 1)
+    # ]
     model = CNN(input_channels=input_channels, num_classes=num_classes, conv_layers=conv_layers, size_img=size_img)
+    params = list(model.parameters())
+    input_params = torch.cat([p.view(-1) for p in params])
+    print('model parameters:', model.get_number_parameters())
 
+    batch_size = 256
 
-    params, names  = calculation.extract_weights(model) 
-    input_params = torch.cat([v.reshape(-1) for v in params]) 
-    
-    # To convert input_params back to params
-    split_sizes = [v.numel() for v in params]
-    params_reconstructed = torch.split(input_params, split_sizes)
-    params_reconstructed = tuple([p.reshape(v.shape) for p, v in zip(params_reconstructed, params)])
+    All_models = Large_CNN(input_channels=input_channels, num_classes=num_classes, conv_layers=conv_layers, size_img=size_img, number_of_networks=batch_size)
 
     x0 =  torch.concat(((input_params).clone(), 1e-8*torch.ones_like(input_params), torch.zeros_like(input_params)), dim = 0)
     
-    f = function_f_and_Sigma(model, params, names, dataset.x_train[:100], dataset.y_train[:100])
+    f = function_f_and_Sigma(model, All_models, dataset, batch_size = batch_size)
 
     eta = 0.001
-    beta = 0.99
+    beta = 0.999
     eps = 1e-8
     sde = RMSprop_SDE(eta, beta, eps, f)
 
@@ -226,7 +226,9 @@ def Test_SDE():
     N = 101
     t = torch.linspace(t0, t1, N)
 
-    result = torchsde.sdeint(sde, x0.unsqueeze(0), t, method = 'euler', dt =1e-3)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    result = torchsde.sdeint(sde, x0.unsqueeze(0).to(device), t, method = 'euler', dt =1e-6)
+    print(time.time() - start)
     all_grad = sde.get_gradient()
     torch.save(result, 'result_1.pt')
     torch.save(all_grad, 'all_grad_1.pt')
