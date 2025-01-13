@@ -161,7 +161,7 @@ class Train_n_times():
 
             if self.optimizer_name == 'RMSPROP':
                 if self.eta == None:
-                    self.eta = 0.9
+                    self.eta = 0.999
                 self.optimizer = torch.optim.RMSprop(self.model.parameters(), lr=self.lr, alpha=self.eta, eps=1e-08, weight_decay=0, momentum=0, centered=False)
             elif self.optimizer_name == 'ADAM':
                 if self.eta == None: 

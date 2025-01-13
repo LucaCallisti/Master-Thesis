@@ -144,18 +144,26 @@ def Test_Train_n_times():
     dataset.downscale(50)
     num_classes = np.unique(dataset.y_train).shape[0]
     input_channels, size_img, _ = dataset.get_image_size()
+    dataset.x_train = dataset.x_train[:512]
+    dataset.y_train = dataset.y_train[:512]
     conv_layers = [
         (4, 3, 1, 1),  
         (8, 3, 1, 1),
         (16, 3, 1, 1),
         (32, 3, 1, 1)
     ]
+    conv_layers = [
+        (2, 3, 1, 1),  # filter number, kernel size, stride, padding
+        (2, 3, 1, 1),
+        (1, 3, 1, 1),
+        (1, 3, 1, 1)
+    ]
     model = CNN(input_channels=input_channels, num_classes=num_classes, conv_layers=conv_layers, size_img=size_img)
     print('model parameters:', model.get_number_parameters())
     print('dimension dataset:', dataset.x_train.shape[0])
-    steps, batch_size = 10000, 32
+    steps, batch_size = 20000, 1
     print('number of epoch:', steps * batch_size / dataset.x_train.shape[0])
-    Train = Train_n_times(model, dataset, steps=steps, lr=0.01, optimizer_name='ADAM')
+    Train = Train_n_times(model, dataset, steps=steps, lr=0.001, optimizer_name='RMSPROP')
     FinalDict = Train.train_n_times(n = 1, batch_size=batch_size)
 
     run_1 = FinalDict[1]
@@ -166,18 +174,20 @@ def Test_Train_n_times():
     avg_loss = [np.mean(Loss[i:i+50]) for i in range(0, len(Loss), aux)]
     avg_accuracy = [np.mean(Accuracy[i:i+50]) for i in range(0, len(Accuracy), aux)]
 
+    f = plt.figure()
     plt.plot(avg_loss)
     plt.xlabel('Steps')
     plt.ylabel('Loss')
-    plt.title('Training Loss')
+    plt.title(f'Training Loss - {time.strftime("%Y-%m-%d %H:%M:%S")}')
+    f.savefig('/home/callisti/Thesis/Master-Thesis/training_loss.png')
 
-    plt.figure()
+    f= plt.figure()
     plt.plot(avg_accuracy)
     plt.xlabel('Steps')
     plt.ylabel('Accuracy')
-    plt.title('Training Accuracy')
-    plt.show()
-    breakpoint()
+    plt.title(f'Training Accuracy - {time.strftime("%Y-%m-%d %H:%M:%S")}')
+    f.savefig('/home/callisti/Thesis/Master-Thesis/training_accuracy.png')
+    # breakpoint()
 
 # Test_Train_n_times()
 
@@ -191,8 +201,8 @@ def Test_SDE():
     num_classes = np.unique(dataset.y_train).shape[0]
     input_channels, size_img, _ = dataset.get_image_size()
     conv_layers = [
-        (1, 3, 1, 1),  # filter number, kernel size, stride, padding
-        (1, 3, 1, 1),
+        (2, 3, 1, 1),  # filter number, kernel size, stride, padding
+        (2, 3, 1, 1),
         (1, 3, 1, 1),
         (1, 3, 1, 1)
     ]
@@ -215,7 +225,7 @@ def Test_SDE():
     
     f = function_f_and_Sigma(model, All_models, dataset, batch_size = batch_size)
 
-    eta = 0.001
+    eta = 0.01
     beta = 0.999
     eps = 1e-8
     sde = RMSprop_SDE(eta, beta, eps, f)
@@ -223,14 +233,14 @@ def Test_SDE():
     # Intervallo di tempo
     t0 = 0.0
     t1 = 0.1
-    N = 101
+    N = 1e3
     t = torch.linspace(t0, t1, N)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    result = torchsde.sdeint(sde, x0.unsqueeze(0).to(device), t, method = 'euler', dt =1e-6)
+    result = torchsde.sdeint(sde, x0.unsqueeze(0).to(device), t, method = 'euler', dt =1e-4)
     print(time.time() - start)
-    all_grad = sde.get_gradient()
     torch.save(result, 'result_1.pt')
+    all_grad = sde.get_gradient()
     torch.save(all_grad, 'all_grad_1.pt')
 
 Test_SDE()
