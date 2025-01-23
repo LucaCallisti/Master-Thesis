@@ -23,6 +23,9 @@ class RMSprop_SDE:
         self.found_Nan = False
         self.verbose = Verbose
 
+        self.Loss_grad = []
+        self.Loss = []
+
 
     def f(self, t, x):
         if self.start_new_f is None:
@@ -57,14 +60,13 @@ class RMSprop_SDE:
 
         # Theta coefficient
         denom = 1/(torch.sqrt(regulariz_function(v, self.C_regularizer)) + self.eps)
-        # coef_theta =  torch.diag(denom) @ (self.f_hessian @ self.f_grad + self.c * torch.diag( 0.5 * denom * (f_grad_square + self.diag_Sigma - v)) @ (self.f_grad * denom * torch.pow(regulariz_function(v, self.C_regularizer), -0.5) * derivative_regulariz_function(v, self.C_regularizer))) @ denom
 
-        coef_theta = (self.f_hessian * (denom @ denom.T)) @ self.f_grad + self.c*(f_grad_square + self.diag_Sigma - v) * (self.f_grad * torch.pow(denom, 3) * derivative_regulariz_function(v, self.C_regularizer))
+        coef_theta = (self.f_hessian * (torch.ger(denom, denom))) @ self.f_grad + self.c*(f_grad_square - self.diag_Sigma - v) * (self.f_grad * torch.pow(denom, 3) * derivative_regulariz_function(v, self.C_regularizer))
         coef_theta = - self.f_grad  * denom - self.eta/2 * coef_theta
 
         # V coefficient
         coef_v = (self.c + self.c**2 * self.eta/2) * (f_grad_square + self.diag_Sigma - v)
-        coef_v = coef_v + 0.5 * self.eta * self.c * ((2 * torch.diag(self.f_grad) @ self.f_hessian + self.diag_grad_sigma)@ self.f_grad) * denom
+        coef_v = coef_v + 0.5 * self.eta * self.c * (self.diag_grad_sigma @ self.f_grad) * denom
 
         # W coefficient
         coef_w = torch.zeros_like(w)
@@ -90,12 +92,13 @@ class RMSprop_SDE:
             self.C_regularizer = (1-self.eta) * torch.sum(v) + 1e-8
 
         if self.theta_old is None or (self.theta_old != theta).any():
+            print('g', t)
             self.update_quantities(theta)
         
         denom = 1/(torch.sqrt(regulariz_function(v, self.C_regularizer)) + self.eps)
 
-        M_theta = torch.sqrt(self.eta) * torch.diag(denom) * self.Sigma_sqrt
-        M_v = -2 * torch.sqrt(self.eta) * self.c * torch.diag(self.f_grad) *  self.Sigma_sqrt + torch.sqrt(torch.tensor(1/2)) * self.c * self.square_root_var_z_squared * w
+        M_theta = torch.sqrt(self.eta) * torch.diag(denom) @ self.Sigma_sqrt
+        M_v = -2 * torch.sqrt(self.eta) * self.c * torch.diag(self.f_grad) @  self.Sigma_sqrt + torch.sqrt(torch.tensor(2)) * self.c * self.square_root_var_z_squared @ torch.diag(w)
         M_w = torch.ones_like(M_theta)
         self.diffusion = torch.concat((M_theta, M_v, M_w), dim = 0).unsqueeze(0)
 
@@ -118,6 +121,14 @@ class RMSprop_SDE:
         self.diag_grad_sigma = self.function_f_and_Sigma.compute_gradients_sigma_diag()
         self.square_root_var_z_squared = self.function_f_and_Sigma.compute_var_z_squared()
 
+        self.Loss_grad.append((self.f_grad))
+        self.Loss.append(self.function_f_and_Sigma.compute_f())
+
+    def get_loss_grad(self):
+        return torch.stack(self.Loss_grad).cpu()
+    def get_loss(self):
+        return torch.stack(self.Loss).cpu()
+
 def regulariz_function(x, C):
     return torch.where(x > C, x, C * torch.exp(x / C - 1))
 
@@ -126,5 +137,21 @@ def derivative_regulariz_function(x, C):
 
 
 
+class RMSprop_SDE_1_order:
+    def __init__(self, eta, beta, function_f_and_Sigma, eps = 1e-8, Verbose = True):
+        self.noise_type = "general"
+        self.sde_type = "ito"
 
+        self.RMS_SDE_2 = RMSprop_SDE(eta, beta, function_f_and_Sigma, eps = eps, Verbose = Verbose)
+    
+    def f(self, t, x):
+        print(t, torch.norm(x))
+        return self.RMS_SDE_2.f(t, x)
 
+    def g(self, t, x):
+        return torch.zeros( (1, x.shape[1], x.shape[1]), device = x.device)
+    
+    def get_loss_grad(self):
+        return torch.stack(self.RMS_SDE_2.Loss_grad).cpu()
+    def get_loss(self):
+        return torch.stack(self.RMS_SDE_2.Loss).cpu()

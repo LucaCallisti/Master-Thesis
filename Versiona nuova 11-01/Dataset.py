@@ -1,5 +1,5 @@
 import numpy as np
-from torch.utils.data import DataLoader, TensorDataset, Dataset
+from torch.utils.data import DataLoader, TensorDataset
 from tensorflow.keras.datasets import cifar10
 import cv2
 import matplotlib.pyplot as plt

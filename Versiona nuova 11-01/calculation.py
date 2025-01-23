@@ -84,6 +84,9 @@ class function_f_and_Sigma():
 
         self.x_train = dataset.x_train[:dim_dataset]
         self.y_train = dataset.y_train[:dim_dataset]
+        if len(self.y_train.shape) == 2:
+            self.y_train = self.y_train.view(-1)
+        self.CNN_functina.set_input(self.x_train, self.y_train)
         self.dim_dataset = self.x_train.shape[0]
 
         self.already_computed_expected_loss_grad, self.already_computed_expected_loss_hessian, self.already_computed_sigma, self.already_computed_gradient_sigma_grad, self.already_computed_var_z_squared = False, False, False, False, False
@@ -94,12 +97,15 @@ class function_f_and_Sigma():
         self.already_computed_expected_loss_grad, self.already_computed_expected_loss_hessian, self.already_computed_sigma, self.already_computed_gradient_sigma_grad, self.already_computed_var_z_squared = False, False, False, False, False
 
 
+    def compute_f(self):
+        self.CNN_functina.which_loss = 'mean'
+        return self.CNN_functina.function(*self.params)
+
     def compute_gradients_f(self):
         if self.already_computed_expected_loss_grad:
             if self.Verbose: print('    Already computed grad f')
             return self.expected_loss_grad
-
-        self.CNN_functina.set_input(self.x_train, self.y_train)
+        
         start = time.time()
         self.all_data_grad = self.CNN_functina.All_data_gradient(self.params) 
         self.expected_loss_grad = self.CNN_functina.expected_loss_gradient(self.params)
@@ -130,15 +136,10 @@ class function_f_and_Sigma():
             return self.Sigma_sqrt, self.diag_Sigma
        
         start = time.time()
-        if torch.isnan(self.all_data_grad).any() or torch.isinf(self.all_data_grad).any():
-            print('Warning: NaN or Inf values detected in all_data_grad')
-            breakpoint()
-        if torch.isnan(self.expected_loss_grad).any() or torch.isinf(self.expected_loss_grad).any():
-            print('Warning: NaN or Inf values detected in expected_loss_grad')
-            breakpoint()
         self.Sigma_sqrt, self.diag_Sigma = Square_root_matrix(self.all_data_grad - self.expected_loss_grad)
-        X = self.all_data_grad - self.expected_loss_grad
-        self.diag_Sigma = torch.norm(X, dim = 0) ** 2
+        if torch.isnan(self.Sigma_sqrt).any() or torch.isinf(self.Sigma_sqrt).any():
+            print('Warning: NaN or Inf values detected in self.Sigma_sqrt')
+            breakpoint()
         
         self.already_computed_sigma = True
         if self.Verbose:
@@ -153,9 +154,9 @@ class function_f_and_Sigma():
             return self.grad_sigma_diag
         start = time.time()
 
-        first_term = 2 *  self.CNN_functina.jacobian_my_funct(*self.params)
-        second_term = 2* (self.dim_dataset/(self.dim_dataset-1)) * torch.diag(self.expected_loss_grad) @ self.expected_loss_hessian
-
+        first_term =  self.CNN_functina.jacobian_my_funct(*self.params)
+        # second_term = 2* (self.dim_dataset/(self.dim_dataset-1)) * torch.diag(self.expected_loss_grad) @ self.expected_loss_hessian
+        second_term = 0
         self.grad_sigma_diag = first_term - second_term
 
         self.already_computed_gradient_sigma_grad = True
@@ -173,24 +174,11 @@ class function_f_and_Sigma():
                 
         if not self.already_computed_sigma:
             self.apply_sigma()
-        
-        if torch.isnan(self.all_data_grad).any() or torch.isinf(self.all_data_grad).any():
-            print('Warning: NaN or Inf values detected in all_data_grad')
-            breakpoint()
-        if torch.isnan(self.expected_loss_grad).any() or torch.isinf(self.expected_loss_grad).any():
-            print('Warning: NaN or Inf values detected in expected_loss_grad')
-            breakpoint()
-        if torch.isnan(self.diag_Sigma).any() or torch.isinf(self.diag_Sigma).any():
-            print('Warning: NaN or Inf values detected in diag_Sigma')
-            breakpoint()
 
         self.square_root_var_z = Square_root_matrix(self.diag_Sigma - (self.all_data_grad - self.expected_loss_grad) ** 2, False)
-        
         if torch.isnan(self.square_root_var_z).any() or torch.isinf(self.square_root_var_z).any():
-            print('Warning: NaN or Inf values detected in square_root_var_z')
+            print('Warning: NaN or Inf values detected in self.square_root_var_z')
             breakpoint()
-
-        assert self.square_root_var_z.shape == (self.number_of_parameters, self.number_of_parameters), 'Variance of z squared shape is not the same as the number of parameters'
 
         self.already_computed_var_z_squared = True
         if self.Verbose:
@@ -201,20 +189,24 @@ def Square_root_matrix(matrix, diag = True):
     '''
     matrix is the cenetered data matrix with shape (m, n), where m is the number of samples and n is the number of features
     '''
-    m = matrix.shape[0]
-    Sigma = (1 / (m - 1) ) * (matrix.T @ matrix)
-    if torch.isnan(Sigma).any() or torch.isinf(Sigma).any():
-        print('Warning: NaN or Inf values detected in Sigma')
+    Sigma = torch.cov(matrix.T).clamp(max = 1e6)
+    if len(Sigma.shape) == 2:
+        eigvals, eigvecs = torch.linalg.eigh(Sigma)
+        eigvals = torch.clamp(eigvals, min=0)
+        Sigma_sqrt = eigvecs @ torch.diag(torch.sqrt(eigvals)) @ eigvecs.T
+    else:
+        Sigma_sqrt = torch.sqrt(Sigma)
 
-    eigvals, eigvecs = torch.linalg.eigh(Sigma)
-    if min(eigvals) < 0:
-        if min(eigvals) < -1e-6: print(f"Warning: Negative eigenvalues are {(eigvals < 0).sum()} Minimum eigenvalue is {min(eigvals)}. Applying regularization.")
-        eigvals = torch.clamp(eigvals, min=0)    
-    Sigma_sqrt = eigvecs @ torch.diag(torch.sqrt(eigvals)) @ eigvecs.T 
-    if diag:
-        diag_Sigma = torch.diag(Sigma)
-        return Sigma_sqrt, diag_Sigma
+    if torch.isnan(Sigma_sqrt).any() or torch.isinf(Sigma_sqrt).any():
+        print('Warning: NaN or Inf values detected in Sigma_sqrt')
+        breakpoint()
+    if diag == True:
+        if len(Sigma.shape) == 2:
+            return Sigma_sqrt, torch.diag(Sigma)
+        else:
+            return Sigma_sqrt, Sigma
     return Sigma_sqrt
+
         
 if __name__ == "__main__":
 

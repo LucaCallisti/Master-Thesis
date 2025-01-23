@@ -8,8 +8,6 @@ import copy
 
 
 
-
-
 class CNN(nn.Module):
     def __init__(self, input_channels, num_classes, conv_layers, size_img, pool_size=2):
         super(CNN, self).__init__()
@@ -119,7 +117,7 @@ class functional_CNN():
         self.model = model.to(self.device)
         self.number_parameters = model.get_number_parameters()
         self.initial_params, self.initial_names = extract_weights(model)
-        self.loss_fn_red_none = loss_fn
+        self.loss_fn_red_none = nn.CrossEntropyLoss(reduction='none')
         self.loss_fn_red_mean = nn.CrossEntropyLoss(reduction='mean')
         self.which_loss = 'none'
 
@@ -168,9 +166,11 @@ class functional_CNN():
     def my_funct(self, *params : Tuple[Tensor, ...]) -> Tensor:
         self.which_loss = 'none'
         grad = self.jaconian(*params)       # grad_ij = (\partial_j f_i)_{i,j}
-        grad_detach = grad.detach()         # grad_detach_ij = (\partial_j ~f_i)_{i,j}
-        result = grad_detach * grad         # result_ij = (\partial_j ~f_i \partial_j f_i)_{i,j}
-        result = (1/(grad.shape[0]-1)) * torch.sum(result, dim=0)  # result_j = ( \sum_i (\partial_j ~f_i \partial_j f_i) )_j
+        # grad_detach = grad.detach()         # grad_detach_ij = (\partial_j ~f_i)_{i,j}
+        # result = grad_detach.view(-1,1) * grad         # result_ij = (\partial_j ~f_i \partial_j f_i)_{i,j}
+        # result = (1/(grad.shape[0]-1)) * torch.sum(result, dim=0)  # result_j = ( \sum_i (\partial_j ~f_i \partial_j f_i) )_j
+        grad_squared = grad**2
+        result = torch.mean(grad_squared, dim=0)
         return result
     
     def jacobian_my_funct(self, *params : Tuple[Tensor, ...]) -> Tuple[Tensor, ...]:
@@ -192,12 +192,14 @@ class Train_n_times():
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model = model.to(self.device)
         self.dataset = dataset
+        self.X_train = dataset.x_train.cuda()
+        self.Y_train = dataset.y_train.cuda()
         self.steps = steps
         self.lr = lr
         self.optimizer_name = optimizer_name
         self.beta = beta
         self.initial_model_params = copy.deepcopy(model.state_dict())
-        self.criterion = nn.CrossEntropyLoss()
+        self.criterion = nn.CrossEntropyLoss(reduction='mean')
     
 
 
@@ -223,8 +225,11 @@ class Train_n_times():
             History['Loss'] = {}
             History['Params'] = []
             History['Square_avg'] = []
+            History['Grad'] = []
+            History['Expected_loss_gradient'] = []
             Loss = []
             Accuracy = []
+            Expected_loss_gradient = []
             aux_initial_parameters = model.state_dict().copy()
 
             for i, (images, labels) in enumerate(dataloader):
@@ -233,14 +238,29 @@ class Train_n_times():
 
                 optimizer.zero_grad()
                 outputs = model(images)
-                loss = criterion(outputs, labels)
+
+                if images.shape[1] == 1:
+                    loss = criterion(outputs, labels.view(-1))
+                else:
+                    loss = criterion(outputs, labels)
+
                 loss.backward()
                 optimizer.step()
+
+                gradients = {name: param.grad.clone() for name, param in model.named_parameters() if param.grad is not None}
 
                 images.detach()
                 labels.detach()
 
-                Loss.append(loss.item())
+                if images.shape[1] == 1:
+                    l = criterion(model(self.X_train), self.Y_train.view(-1))
+                else:
+                    l = criterion(model(self.X_train), self.Y_train)
+
+                Loss.append(l.item())
+                expected_loss_gradient = torch.autograd.grad(l, model.parameters(), create_graph=True)
+                expected_loss_gradient = [g.view(1, -1) for g in expected_loss_gradient]
+                Expected_loss_gradient.append(torch.norm(torch.cat(expected_loss_gradient, dim = 1), p=2).item())
                 Accuracy.append((outputs.argmax(1) == labels).float().mean().item())
 
                 if isinstance(optimizer, torch.optim.RMSprop):
@@ -252,6 +272,8 @@ class Train_n_times():
                     # History[i+1] = {'model' : params, 'square_avg' : square_avg}
                     History['Square_avg'].append(square_avg)
                     History['Params'].append(params)
+                    History['Grad'].append(torch.cat([gradients[name].view(-1) for name in gradients]))
+
                 if isinstance(optimizer, torch.optim.Adam):
                     adam_param = {k: {'exp_avg' : v['exp_avg'].clone(), 'exp_avg_sq' : v['exp_avg_sq'].clone()} for k, v in self.optimizer.state_dict()['state'].items()}
                     History[i+1] = {'model' : model.state_dict().copy(), 'adam_param' : adam_param}
@@ -260,6 +282,7 @@ class Train_n_times():
                     break
 
             History['Loss'] = Loss
+            History['Expected_loss_gradient'].append(Expected_loss_gradient)
             History['Accuracy'] = Accuracy
             History['Params'] = torch.stack(History['Params'])
             History['Square_avg'] = torch.stack(History['Square_avg'])
@@ -280,7 +303,7 @@ class Train_n_times():
         Different_run = {}
         for i in range(n):
             self.model.load_state_dict(copy.deepcopy(self.initial_model_params))
-            dataloader = self.dataset.dataloader(batch_size = batch_size, steps=self.steps)
+            dataloader = self.dataset.dataloader(batch_size = batch_size, steps=self.steps, seed = i)
 
             if self.optimizer_name == 'RMSPROP':
                 if self.beta == None:
