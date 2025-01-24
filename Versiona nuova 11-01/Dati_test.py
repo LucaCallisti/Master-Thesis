@@ -49,16 +49,14 @@ def simulation():
     dataset = SimpleDataset(n = 1000)
     save_funz = Save_exp.SaveExp('/home/callisti/Thesis/Master-Thesis/Results')
 
-    steps, n_runs = 5, 2
-    eta, beta = 0.1, 0.99
+    steps, n_runs = 50, 10
+    eta, beta = 0.01, 0.99
     FinalDict = Simulation_discrete_dynamics(model, dataset, steps, lr=eta, beta = beta, n_runs=n_runs, batch_size=1)
     save_funz.save_result_discrete(FinalDict)
     save_funz.add_element('eta', eta)
     save_funz.add_element('beta', beta)
     save_funz.add_element('steps', steps)
     save_funz.add_element('n_runs', n_runs)
-    # pl = plot()
-    # pl.plot_norm_discrete(FinalDict)
 
     t0, t1 = 0.0, (steps * eta)  
     t = torch.linspace(t0, t1, steps)
@@ -104,18 +102,13 @@ def simulation():
     save_funz.save_result_continuous(result)
     save_funz.save_loss_sde(Loss)
     save_funz.save_dict()
-    # result = torch.stack(result).squeeze()
-    # if len(result.shape) == 2:
-    #     result = result.unsqueeze(0)
-    # gradient = result[:, :, :number_parameters]
-    # square_avg = result[:, :, number_parameters:2*number_parameters]
-    # print(gradient.shape, square_avg.shape)
-    # gradient_norm = torch.norm(gradient, dim=2)
-    # square_avg_norm = torch.norm(square_avg, dim=2)
-    # pl.plot_norm_cont(gradient_norm, square_avg_norm)
-    
-    # plot_loss(Loss, FinalDict)
-    breakpoint()
+
+
+
 
 if __name__ == "__main__":
-    simulation()
+    # simulation()
+    load_funz = Save_exp.LoadExp('/home/callisti/Thesis/Master-Thesis/Results/Experiment_2')
+    load_funz.load_FinalDict()
+    load_funz.load_result('Risultati_sde.pt')
+    load_funz.plot()

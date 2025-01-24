@@ -11,7 +11,13 @@ class SaveExp:
         self.file_path = file_path
         self.data = {}
         self.pl = None
-
+    
+    def partial_result(self, partial_result, name):
+        if self.file_path is None: self.find_path()
+        num = len(partial_result)
+        path = os.path.join(self.path_folder, f'{name}_{num}.pt')
+        torch.save(partial_result, path)
+        
     def find_path(self):
         existing_folders = [d for d in os.listdir(self.path_folder) if os.path.isdir(os.path.join(self.path_folder, d)) and d.startswith('Experiment_')]
         experiment_numbers = [int(d.split('_')[1]) for d in existing_folders if d.split('_')[1].isdigit()]
@@ -27,8 +33,10 @@ class SaveExp:
         self.data[key] = value
 
     def save_dict(self):
-        if self.file_path is None:
-            self.find_path()
+        if self.file_path is None: self.find_path()
+        for key, value in self.data.items():
+            if isinstance(value, list) and all(isinstance(i, tuple) for i in value):
+                self.data[key] = str(value)
         df = pd.DataFrame(self.data, index=[0]).T.reset_index()
         df.columns = ['Key', 'Value']
         df.to_csv(self.file_path, index=False)
@@ -69,6 +77,8 @@ class SaveExp:
             self.find_path()
         if self.pl is None:
             self.pl = plot(self.path_folder)
+            
+        torch.save(Loss, os.path.join(self.path_folder, 'Loss.pt'))
         self.pl.plot_loss(Loss, self.data['eta'])
 
 
@@ -82,6 +92,13 @@ def convert_tensors_to_lists(d):
     else:
         return d
     
+def convert_lists_to_tensors(d):
+    if isinstance(d, dict):
+        return {k: convert_lists_to_tensors(v) for k, v in d.items()}
+    elif isinstance(d, list):
+        return torch.tensor(d)
+    else:
+        return d
 
 class plot():
     def __init__(self, path_folder):
@@ -172,3 +189,37 @@ class plot():
         plt.title(f'Loss Comparison')
         plt.savefig('/home/callisti/Thesis/Master-Thesis/Versiona nuova 11-01/loss_comparison.png')
         plt.show()
+
+
+
+class LoadExp():
+    def __init__(self, folder_path):
+        self.folder_path = folder_path
+        
+    def load_FinalDict(self):
+        with open(os.path.join(self.folder_path, 'FinalDict.json'), 'r') as file:
+            final_dict = json.load(file)
+        aux = convert_lists_to_tensors(final_dict)
+        self.FinalDict = {int(k) : v for k, v in aux.items()}
+        return self.FinalDict
+    
+    def load_result(self, name):
+        path = os.path.join(self.folder_path, name)
+        self.result = torch.load(path)
+        return self.result
+    
+    def plot(self):
+        pl = plot(self.folder_path)
+        pl.plot_norm_discrete(self.FinalDict)
+        self.result = torch.stack(self.result).squeeze()
+        number_parameters = self.result.shape[2] // 3
+        if len(self.result.shape) == 2:
+            self.result = self.result.unsqueeze(0)
+        gradient = self.result[:, :, :number_parameters]
+        square_avg = self.result[:, :, number_parameters:2*number_parameters]
+        print(gradient.shape, square_avg.shape)
+        gradient_norm = torch.norm(gradient, dim=2)
+        square_avg_norm = torch.norm(square_avg, dim=2)
+        pl.plot_norm_cont(gradient_norm, square_avg_norm)
+
+

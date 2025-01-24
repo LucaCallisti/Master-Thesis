@@ -189,9 +189,17 @@ def Square_root_matrix(matrix, diag = True):
     '''
     matrix is the cenetered data matrix with shape (m, n), where m is the number of samples and n is the number of features
     '''
-    Sigma = torch.cov(matrix.T).clamp(max = 1e6)
+    Sigma = torch.cov(matrix.T).clamp(min = -1e6, max = 1e6)
     if len(Sigma.shape) == 2:
-        eigvals, eigvecs = torch.linalg.eigh(Sigma)
+        try:
+            eigvals, eigvecs = torch.linalg.eigh(Sigma + 1e-6 * torch.eye(Sigma.shape[0], device=Sigma.device))
+        except torch._C._LinAlgError:
+            try:
+                eigvals, eigvecs = torch.linalg.eigh(Sigma + 1e-4 * torch.eye(Sigma.shape[0], device=Sigma.device))
+            except torch._C._LinAlgError:
+                eigvals, eigvecs = torch.linalg.eig(Sigma + 1e-4 * torch.eye(Sigma.shape[0], device=Sigma.device))
+
+        eigvals, eigvecs = torch.linalg.eigh(Sigma+1e-6*torch.eye(Sigma.shape[0], device=Sigma.device))
         eigvals = torch.clamp(eigvals, min=0)
         Sigma_sqrt = eigvecs @ torch.diag(torch.sqrt(eigvals)) @ eigvecs.T
     else:

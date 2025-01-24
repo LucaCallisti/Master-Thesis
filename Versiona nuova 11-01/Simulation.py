@@ -220,5 +220,9 @@ def plot_load():
     pl.plot_norm_cont(gradient_norm, square_avg_norm)
 
 if __name__ == '__main__':
-    simulation()
+    # simulation()
     # plot_load()
+
+    file_path = '/home/callisti/Thesis/Master-Thesis/Versiona nuova 11-01/Risultati_sde.pt'
+    data = torch.load(file_path)
+    breakpoint()

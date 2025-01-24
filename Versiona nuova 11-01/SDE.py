@@ -61,7 +61,7 @@ class RMSprop_SDE:
         # Theta coefficient
         denom = 1/(torch.sqrt(regulariz_function(v, self.C_regularizer)) + self.eps)
 
-        coef_theta = (self.f_hessian * (torch.ger(denom, denom))) @ self.f_grad + self.c*(f_grad_square - self.diag_Sigma - v) * (self.f_grad * torch.pow(denom, 3) * derivative_regulariz_function(v, self.C_regularizer))
+        coef_theta = (self.f_hessian * (torch.ger(denom, denom))) @ self.f_grad + self.c*(f_grad_square + self.diag_Sigma - v) * (self.f_grad * torch.pow(denom, 3) * derivative_regulariz_function(v, self.C_regularizer))
         coef_theta = - self.f_grad  * denom - self.eta/2 * coef_theta
 
         # V coefficient
