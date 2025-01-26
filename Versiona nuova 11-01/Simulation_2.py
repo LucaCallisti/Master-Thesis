@@ -45,9 +45,7 @@ def simulation(load = False):
 
     model = CNN(input_channels=input_channels, num_classes=num_classes, conv_layers=conv_layers, size_img=size_img)
     steps, n_runs = 50, 2
-    eta, beta = 0.01, 0.99
-    # eta = eta / 10
-    # beta = 1- (1-beta)/10
+    eta, beta = 0.1, 0.9
     print(eta, beta)
     FinalDict = Simulation_discrete_dynamics(model, dataset, steps, lr=eta, beta = beta, n_runs=n_runs, batch_size=1)
     save_funz.save_result_discrete(FinalDict)
@@ -124,13 +122,18 @@ def simulation(load = False):
 def Load(num_exp, num_run):
     load = Save_exp.LoadExp(f'/home/callisti/Thesis/Master-Thesis/Result3/Experiment_{num_exp}', nomralization=True)
     FinalDict = load.load_FinalDict()
-    result = load.load_result(f'result_{num_run}.pt')
-    loss = load.load_loss(f'loss_{num_run}.pt')
-    grad = load.load_grad(f'grad_{num_run}.pt')
+    if num_run >= 0:
+        result = load.load_result(f'result_{num_run}.pt')
+        loss = load.load_loss(f'loss_{num_run}.pt')
+        grad = load.load_grad(f'grad_{num_run}.pt')
+    elif num_run == -1:
+        result = load.load_result('result.pt')
+        loss = load.load_loss('Loss.pt')
+        grad = load.load_grad('grad.pt')
     breakpoint()
     load.plot()
-    load.plot_loss(eta = 0.01)    
+    load.plot_loss()    
 
 if __name__ == "__main__":
-    simulation()
-    # Load(num_exp = 2, num_run=1)
+    # simulation()
+    Load(num_exp = 9, num_run=-1)

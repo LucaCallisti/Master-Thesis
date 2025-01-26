@@ -86,7 +86,7 @@ class SaveExp:
             self.pl = plot(self.path_folder, self.normalization)
             
         torch.save(Loss, os.path.join(self.path_folder, 'Loss.pt'))
-        self.pl.plot_loss(Loss, self.data['eta'])
+        self.pl.plot_loss(Loss)
 
 
 def convert_tensors_to_lists(d):
@@ -191,16 +191,15 @@ class plot():
         self.my_plot([self.df_grad, df_grad_c], ['discrete', 'continuous'], 'Parameter Comparison')
         self.my_plot([self.df_square_avg, df_square_c], ['discrete', 'continuous'], 'Square_avg Comparison')
 
-    def plot_loss(self, Loss, eta = 0.1):
+    def plot_loss(self, Loss):
         Loss = torch.stack(Loss)
-        Loss = Loss[:, 1:]
+        # Loss = Loss[:, 1:]
 
         len_loss_cont = Loss.shape[1]
         len_loss_discr = len(self.FinalDict[1]['Loss'])
 
         temp = len_loss_cont // len_loss_discr
         Loss = Loss[:, ::temp]
-
         data_loss_cont = []
         for i_run in range(Loss.shape[0]):
             for i_step in range(Loss.shape[1]):
@@ -229,7 +228,7 @@ class plot():
 
 
 class LoadExp():
-    def __init__(self, folder_path, nomralization = False):
+    def __init__(self, folder_path, nomralization = True):
         self.folder_path = folder_path
         self.normalization = nomralization
         
@@ -259,20 +258,11 @@ class LoadExp():
     def plot(self):
         self.pl = plot(self.folder_path, self.normalization)
         self.pl.plot_norm_discrete(self.FinalDict)
-        # self.result = torch.stack(self.result).squeeze()
-        # if len(self.result.shape) == 2:
-        #     self.result = self.result.unsqueeze(0)
-        # number_parameters = self.result.shape[2] // 3
-        # parameter = self.result[:, :, :number_parameters]
-        # square_avg = self.result[:, :, number_parameters:2*number_parameters]
-        # print(parameter.shape, square_avg.shape)
-        # parameter_norm = torch.norm(parameter, dim=2)
-        # square_avg_norm = torch.norm(square_avg, dim=2)
         parameter_norm, square_avg_norm = prepare_result_continuous(self.result)
         self.pl.plot_norm_cont(parameter_norm, square_avg_norm)
 
-    def plot_loss(self, eta):
-        self.pl.plot_loss(self.loss, eta)
+    def plot_loss(self):
+        self.pl.plot_loss(self.loss)
 
 
 
@@ -317,7 +307,7 @@ def MergeExp(path_folder_1, path_folder_2, final_path):
     grad = grad1 + grad2
 
     save = SaveExp(final_path)
-    save.add_element('eta', float(df1.loc[df1['Key'] == 'eta', 'Value'].values[0]))
+    # save.add_element('eta', float(df1.loc[df1['Key'] == 'eta', 'Value'].values[0]))
     save.save_result_discrete(FinalDict)
     save.save_result_continuous(result)
     save.save_loss_sde(loss)
@@ -326,11 +316,14 @@ def MergeExp(path_folder_1, path_folder_2, final_path):
     
 
 if __name__ == "__main__":
-    path_1 = '/home/callisti/Thesis/Master-Thesis/Result3/Experiment_8'
-    path_2 = '/home/callisti/Thesis/Master-Thesis/Result3/Experiment_5'
-    print(path_1)
-    print(path_2)
+    Path = {}
+    for i in range(1, 10):
+        Path[i] = f'/home/callisti/Thesis/Master-Thesis/Result3/Experiment_{i}'
+
     final_path = '/home/callisti/Thesis/Master-Thesis/Result3'
-    MergeExp(path_1, path_2, final_path)
+    MergeExp(Path[1], Path[2], final_path)
+    MergeExp(Path[6], Path[3], final_path)
+    MergeExp(Path[7], Path[4], final_path)
+    MergeExp(Path[8], Path[5], final_path)
 
         
