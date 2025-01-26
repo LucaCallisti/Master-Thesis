@@ -1,7 +1,7 @@
 import torch
 from torch.utils.data import DataLoader, TensorDataset
-from Simulation import Simulation_discrete_dynamics, plot, plot_loss
 from calculation import function_f_and_Sigma
+from CNN import Train_n_times
 import time
 import torchsde
 from SDE import RMSprop_SDE, RMSprop_SDE_1_order
@@ -11,20 +11,30 @@ import Save_exp
 import torch.nn as nn
 import torch.optim as optim
 
+def Simulation_discrete_dynamics(model, dataset, steps, lr, beta, n_runs, batch_size=1):
+    print('model parameters:', model.get_number_parameters())
+    print('dimension dataset:', dataset.x_train.shape[0])
+    print('number of epoch:', steps * batch_size / dataset.x_train.shape[0], ' final time:', steps * lr)
+    Train = Train_n_times(model, dataset, steps=steps, lr=lr, optimizer_name='RMSPROP', beta = beta)
+    FinalDict = Train.train_n_times(n = n_runs, batch_size=batch_size)
+    return FinalDict
+
 # Define the neural network model
 class SimpleNN(nn.Module):
     def __init__(self):
         super(SimpleNN, self).__init__()
-        self.a = nn.Parameter(torch.tensor([1.0]))
-        self.b = nn.Parameter(torch.tensor([1.0]))
+        self.layer_1 = nn.Linear(1, 8)
+        self.layer_2 = nn.Linear(8, 2)
+        self.activation = nn.Tanh()
 
     def forward(self, x):
-        a_term = self.a**3 * x
-        b_term = self.b**3 * x
-        return torch.cat((a_term, b_term), dim=1)
+        x = self.layer_1(x)
+        x = self.activation(x)
+        x = self.layer_2(x)
+        return self.activation(x)
     
     def get_number_parameters(self):
-        return 1
+        return sum(p.numel() for p in self.parameters())
 
 
 class SimpleDataset():
@@ -40,16 +50,16 @@ class SimpleDataset():
 
     def dataloader(self, batch_size, steps, seed):
         tensor_dataset = TensorDataset(self.x_train, self.y_train)
-        dataloader = DataLoader(tensor_dataset, batch_size=batch_size, shuffle=False)
+        dataloader = DataLoader(tensor_dataset, batch_size=batch_size, shuffle=True)
         return dataloader
 
 
 def simulation():
     model = SimpleNN()
-    dataset = SimpleDataset(n = 1000)
+    dataset = SimpleDataset(n = 128)
     save_funz = Save_exp.SaveExp('/home/callisti/Thesis/Master-Thesis/Results')
 
-    steps, n_runs = 50, 10
+    steps, n_runs = 50, 3
     eta, beta = 0.01, 0.99
     FinalDict = Simulation_discrete_dynamics(model, dataset, steps, lr=eta, beta = beta, n_runs=n_runs, batch_size=1)
     save_funz.save_result_discrete(FinalDict)
@@ -57,6 +67,8 @@ def simulation():
     save_funz.add_element('beta', beta)
     save_funz.add_element('steps', steps)
     save_funz.add_element('n_runs', n_runs)
+    save_funz.add_element('batch_size', 1)
+    save_funz.add_element('model', 'SimpleNN')
 
     t0, t1 = 0.0, (steps * eta)  
     t = torch.linspace(t0, t1, steps)
@@ -96,7 +108,6 @@ def simulation():
             grad = sde.get_loss_grad()
             Grad.append(grad)
             result.append(res)
-            torch.save(result, f'/home/callisti/Thesis/Master-Thesis/Versiona nuova 11-01/Risultati_sde.pt')
 
     print(f'Elapsed time for simulating SDE: {time.time() - start:.2f}')
     save_funz.save_result_continuous(result)
@@ -107,8 +118,5 @@ def simulation():
 
 
 if __name__ == "__main__":
-    # simulation()
-    load_funz = Save_exp.LoadExp('/home/callisti/Thesis/Master-Thesis/Results/Experiment_2')
-    load_funz.load_FinalDict()
-    load_funz.load_result('Risultati_sde.pt')
-    load_funz.plot()
+    simulation()
+    

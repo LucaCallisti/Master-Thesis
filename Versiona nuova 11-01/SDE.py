@@ -4,7 +4,7 @@ import time
 
 
 class RMSprop_SDE:
-    def __init__(self, eta, beta, function_f_and_Sigma, eps = 1e-8, Verbose = True):
+    def __init__(self, eta, beta, function_f_and_Sigma, final_time, eps = 1e-8, Verbose = True):
         self.noise_type = "general"
         self.sde_type = "ito"
 
@@ -14,7 +14,6 @@ class RMSprop_SDE:
         self.C_regularizer = None
         self.function_f_and_Sigma = function_f_and_Sigma
 
-
         self.theta_old = None
         self.diffusion = None
         self.drift = None
@@ -22,6 +21,7 @@ class RMSprop_SDE:
         self.start_new_f = None
         self.found_Nan = False
         self.verbose = Verbose
+        self.final_time = final_time
 
         self.Loss_grad = []
         self.Loss = []
@@ -42,12 +42,18 @@ class RMSprop_SDE:
         theta = x[:aux]
         v = x[aux:2*aux]
         if (v < 0).any():
-            if min(v) < -1e-6: print(f"Warning: Some components of v are negative, {(v<0).sum()}, {torch.norm(v[v < 0])}, time: {t}")
+            if min(v) < -1e-6 and (v<0).sum() > 9: print(f"Warning: Some components of v are negative, {(v<0).sum()}, {torch.norm(v[v < 0])}, time: {t}")
             v[v < 0] = 0
         w = x[2*aux:3*aux]
 
         if self.C_regularizer is None:
-            self.C_regularizer = (1-self.eta) * torch.sum(v) + 1e-8
+            self.C_regularizer = (1-self.eta) **self.final_time * torch.min(v) 
+            self.C_regularizer = 9/10 * self.C_regularizer
+            if self.C_regularizer == 0:
+                print("Warning: C_regularizer is 0")
+            if self.C_regularizer < self.eta:
+                self.C_regularizer = self.eta
+                print("Warning: C_regularizer is too small")
 
         if self.theta_old is None or (self.theta_old != theta).any():
             self.update_quantities(theta)
@@ -84,7 +90,7 @@ class RMSprop_SDE:
         theta = x[:aux]
         v = x[aux:2*aux]
         if (v < 0).any():
-            if min(v) < -1e-6: print(f"Warning: Some components of v are negative,{(v<0).sum()}, {torch.norm(v[v < 0])}, time: {t}")
+            if min(v) < -1e-6 and (v<0).sum() > 9: print(f"Warning: Some components of v are negative,{(v<0).sum()}, {torch.norm(v[v < 0])}, time: {t}")
             v[v < 0] = 0
         w = x[2*aux:3*aux]  
 

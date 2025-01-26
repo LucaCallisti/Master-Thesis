@@ -4,18 +4,23 @@ import torch
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+import re
 
 class SaveExp:
-    def __init__(self, path_folder, file_path=None):
+    def __init__(self, path_folder, file_path=None, normalization_plot = True):
         self.path_folder = path_folder
         self.file_path = file_path
         self.data = {}
         self.pl = None
+        self.normalization = normalization_plot
     
-    def partial_result(self, partial_result, name):
+    def partial_result(self, partial_result, name, Bool = False):
         if self.file_path is None: self.find_path()
-        num = len(partial_result)
-        path = os.path.join(self.path_folder, f'{name}_{num}.pt')
+        if not Bool:
+            num = len(partial_result) 
+            path = os.path.join(self.path_folder, f'{name}_{num}.pt')
+        else:
+            path = os.path.join(self.path_folder, f'{name}.pt')
         torch.save(partial_result, path)
         
     def find_path(self):
@@ -46,7 +51,7 @@ class SaveExp:
         if self.file_path is None:
             self.find_path()
         if self.pl is None:
-            self.pl = plot(self.path_folder)
+            self.pl = plot(self.path_folder, self.normalization)
 
         final_dict_serializable = convert_tensors_to_lists(FinalDict)
 
@@ -59,12 +64,14 @@ class SaveExp:
         if self.file_path is None:
             self.find_path()
         if self.pl is None:
-            self.pl = plot(self.path_folder)
+            self.pl = plot(self.path_folder, self.normalization)
+
+        torch.save(result, os.path.join(self.path_folder, 'result.pt'))
 
         result = torch.stack(result).squeeze()
-        number_parameters = result.shape[2] // 3
         if len(result.shape) == 2:
             result = result.unsqueeze(0)
+        number_parameters = result.shape[2] // 3
         gradient = result[:, :, :number_parameters]
         square_avg = result[:, :, number_parameters:2*number_parameters]
         print(gradient.shape, square_avg.shape)
@@ -76,7 +83,7 @@ class SaveExp:
         if self.file_path is None:
             self.find_path()
         if self.pl is None:
-            self.pl = plot(self.path_folder)
+            self.pl = plot(self.path_folder, self.normalization)
             
         torch.save(Loss, os.path.join(self.path_folder, 'Loss.pt'))
         self.pl.plot_loss(Loss, self.data['eta'])
@@ -100,9 +107,22 @@ def convert_lists_to_tensors(d):
     else:
         return d
 
+def prepare_result_continuous(result):
+    result = torch.stack(result).squeeze()
+    if len(result.shape) == 2:
+        result = result.unsqueeze(0)
+    number_parameters = result.shape[2] // 3
+    gradient = result[:, :, :number_parameters]
+    square_avg = result[:, :, number_parameters:2*number_parameters]
+    print(gradient.shape, square_avg.shape)
+    gradient_norm = torch.norm(gradient, dim=2)
+    square_avg_norm = torch.norm(square_avg, dim=2)
+    return gradient_norm, square_avg_norm
+
 class plot():
-    def __init__(self, path_folder):
+    def __init__(self, path_folder, normalization = False):
         self.path_folder = path_folder
+        self.normalization = normalization
     
     def my_plot(self, list_df, list_legend, title):
         def same_plot(df, legend):
@@ -113,29 +133,36 @@ class plot():
                 sns.lineplot(data=df, x='step', y='norm', ci=95, label=legend)
                 # sns.lineplot(data=df, x='step', y='norm', hue='run', palette='tab10')
 
+        sns.set_theme()
         plt.figure()
         for df, legend in zip(list_df, list_legend):
             same_plot(df, legend)
         plt.xlabel('Step')
         plt.ylabel('Norm')
         plt.title(f'Norm {title}')
+        if self.normalization:
+            title = f'{title}_normalized'
         path = os.path.join(self.path_folder, f'norm_{title}.png')
         plt.savefig(path)
 
     def plot_norm_discrete(self, FinalDict):
         self.FinalDict = FinalDict
-        n_step, _ = FinalDict[1]['Params'].shape
+        self.n_step, self.number_parameters = FinalDict[1]['Params'].shape
         data_grad = []
         data_sqare_avg = []
         for i_run in FinalDict.keys():
             params = FinalDict[i_run]['Params']
             norm = torch.norm(params, dim=1)
-            for i_step in range(n_step): 
+            for i_step in range(self.n_step): 
+                if self.normalization:
+                    norm[i_step] /= self.number_parameters
                 data_grad.append({'step': i_step, 'run': i_run, 'norm': norm[i_step].item()})
             
             square_avg = FinalDict[i_run]['Square_avg']
             norm = torch.norm(square_avg, dim=1) 
-            for i_step in range(n_step):
+            for i_step in range(self.n_step):
+                if self.normalization:
+                    norm[i_step] /= self.number_parameters
                 data_sqare_avg.append({'step': i_step, 'run': i_run, 'norm': norm[i_step].item()})
 
         self.df_grad = pd.DataFrame(data_grad)
@@ -149,15 +176,20 @@ class plot():
             data = []
             for i_run in range(n_run):
                 for t in range(n_step):
+                    if self.normalization:
+                        Result_sde[i_run, t] /= self.number_parameters
                     data.append({'step': t, 'norm': Result_sde[i_run, t].item(), 'run': i_run})
             return data
-        data_grad = aux(Result_sde_grad)
-        data_square = aux(Reuslt_sde_square)
-
-        df_grad = pd.DataFrame(data_grad)
-        df_square = pd.DataFrame(data_square)
-        self.my_plot([df_grad, self.df_grad], ['continuous', 'discrete'], 'Parameter Comparison')
-        self.my_plot([df_square, self.df_square_avg], ['continuous', 'discrete'], 'Square_avg Comparison')
+        
+        _, step_c = Result_sde_grad.shape
+        Grad_c = Result_sde_grad[:, :: step_c//self.n_step]
+        Square_c = Reuslt_sde_square[:, :: step_c//self.n_step]
+        data_grad_c = aux(Grad_c)
+        data_square_c = aux(Square_c)
+        df_grad_c = pd.DataFrame(data_grad_c)
+        df_square_c = pd.DataFrame(data_square_c)
+        self.my_plot([self.df_grad, df_grad_c], ['discrete', 'continuous'], 'Parameter Comparison')
+        self.my_plot([self.df_square_avg, df_square_c], ['discrete', 'continuous'], 'Square_avg Comparison')
 
     def plot_loss(self, Loss, eta = 0.1):
         Loss = torch.stack(Loss)
@@ -172,29 +204,34 @@ class plot():
         data_loss_cont = []
         for i_run in range(Loss.shape[0]):
             for i_step in range(Loss.shape[1]):
-                data_loss_cont.append({'step': i_step * eta, 'loss': Loss[i_run, i_step].item(), 'run': i_run})
+                data_loss_cont.append({'step': i_step, 'loss': Loss[i_run, i_step].item(), 'run': i_run})
         data_loss_disc = []
         for i_run in self.FinalDict.keys():
             loss = self.FinalDict[i_run]['Loss']
             for i_step, l in enumerate(loss):
-                data_loss_disc.append({'step': i_step * eta, 'loss': l, 'run': i_run})
+                if isinstance(l, torch.Tensor):
+                    l = l.item()
+                data_loss_disc.append({'step': i_step, 'loss': l, 'run': i_run})
 
         df_loss_cont = pd.DataFrame(data_loss_cont)
         df_loss_disc = pd.DataFrame(data_loss_disc)
+        sns.set_theme()
         plt.figure()
         sns.lineplot(data=df_loss_cont, x='step', y='loss', ci=95, label='continuous')
         sns.lineplot(data=df_loss_disc, x='step', y='loss', ci=95, label='discrete')
         plt.xlabel('Step')
         plt.ylabel('Loss')
         plt.title(f'Loss Comparison')
-        plt.savefig('/home/callisti/Thesis/Master-Thesis/Versiona nuova 11-01/loss_comparison.png')
+        path = os.path.join(self.path_folder, 'Loss_comparison.png')
+        plt.savefig(path)
         plt.show()
 
 
 
 class LoadExp():
-    def __init__(self, folder_path):
+    def __init__(self, folder_path, nomralization = False):
         self.folder_path = folder_path
+        self.normalization = nomralization
         
     def load_FinalDict(self):
         with open(os.path.join(self.folder_path, 'FinalDict.json'), 'r') as file:
@@ -203,23 +240,97 @@ class LoadExp():
         self.FinalDict = {int(k) : v for k, v in aux.items()}
         return self.FinalDict
     
-    def load_result(self, name):
+    def _load_file_pt(self, name):
         path = os.path.join(self.folder_path, name)
-        self.result = torch.load(path)
+        return torch.load(path)
+    
+    def load_result(self, name):
+        self.result = self._load_file_pt(name)
         return self.result
     
+    def load_loss(self, name):
+        self.loss = self._load_file_pt(name)
+        return self.loss
+    
+    def load_grad(self, name):
+        self.grad = self._load_file_pt(name)
+        return self.grad
+    
     def plot(self):
-        pl = plot(self.folder_path)
-        pl.plot_norm_discrete(self.FinalDict)
-        self.result = torch.stack(self.result).squeeze()
-        number_parameters = self.result.shape[2] // 3
-        if len(self.result.shape) == 2:
-            self.result = self.result.unsqueeze(0)
-        gradient = self.result[:, :, :number_parameters]
-        square_avg = self.result[:, :, number_parameters:2*number_parameters]
-        print(gradient.shape, square_avg.shape)
-        gradient_norm = torch.norm(gradient, dim=2)
-        square_avg_norm = torch.norm(square_avg, dim=2)
-        pl.plot_norm_cont(gradient_norm, square_avg_norm)
+        self.pl = plot(self.folder_path, self.normalization)
+        self.pl.plot_norm_discrete(self.FinalDict)
+        # self.result = torch.stack(self.result).squeeze()
+        # if len(self.result.shape) == 2:
+        #     self.result = self.result.unsqueeze(0)
+        # number_parameters = self.result.shape[2] // 3
+        # parameter = self.result[:, :, :number_parameters]
+        # square_avg = self.result[:, :, number_parameters:2*number_parameters]
+        # print(parameter.shape, square_avg.shape)
+        # parameter_norm = torch.norm(parameter, dim=2)
+        # square_avg_norm = torch.norm(square_avg, dim=2)
+        parameter_norm, square_avg_norm = prepare_result_continuous(self.result)
+        self.pl.plot_norm_cont(parameter_norm, square_avg_norm)
+
+    def plot_loss(self, eta):
+        self.pl.plot_loss(self.loss, eta)
 
 
+
+def MergeExp(path_folder_1, path_folder_2, final_path):
+    df1 = pd.read_csv(os.path.join(path_folder_1, 'data.csv'))
+    df2 = pd.read_csv(os.path.join(path_folder_2, 'data.csv'))
+
+    checks = ['eta', 'beta', 'steps', 'conv_layers', 'batch_size', 'dataset_size', 'size_img', 'model', 'number_parameters', 't0', 't1']
+    for check in checks: assert (df1.loc[df1['Key'] == check].values[0] == df2.loc[df2['Key'] == check].values[0]).all(), f'{check} is different'
+    
+    key_from_1 = df1['Key'].values
+    run_from_1 = [int(re.search(r'time for run (\d+)', key).group(1)) for key in key_from_1 if re.search(r'time for run (\d+)', key)]
+    max_number_run = max(run_from_1)
+
+    dic_from_2 = {}
+    for key, value in zip(df2['Key'], df2['Value']):
+        match = re.match(r'time for run (\d+)', key)
+        if match:
+            run_number = int(match.group(1))
+            new_key = f'time for run {max_number_run + run_number}'
+            dic_from_2[new_key] = value
+
+    df1 = pd.concat([df1, pd.DataFrame(dic_from_2.items(), columns=['Key', 'Value'])], ignore_index=True)
+
+    load1 = LoadExp(path_folder_1)
+    load2 = LoadExp(path_folder_2)
+    FinalDict1 = load1.load_FinalDict()
+    FinalDict2 = load2.load_FinalDict()
+    result1 = load1.load_result('result.pt')
+    result2 = load2.load_result('result.pt')
+    loss1 = load1.load_loss('Loss.pt')
+    loss2 = load2.load_loss('Loss.pt')
+    grad1 = load1.load_grad('grad.pt')
+    grad2 = load2.load_grad('grad.pt')
+
+    num_keys_1 = len(FinalDict1)
+    dict = {k+num_keys_1: v for k, v in FinalDict2.items()}
+    FinalDict = {**FinalDict1, **dict}
+
+    result = result1 + result2
+    loss = loss1 + loss2
+    grad = grad1 + grad2
+
+    save = SaveExp(final_path)
+    save.add_element('eta', float(df1.loc[df1['Key'] == 'eta', 'Value'].values[0]))
+    save.save_result_discrete(FinalDict)
+    save.save_result_continuous(result)
+    save.save_loss_sde(loss)
+    save.partial_result(grad, 'grad', Bool = True)
+    df1.to_csv(os.path.join(save.path_folder, 'data.csv'), index=False)
+    
+
+if __name__ == "__main__":
+    path_1 = '/home/callisti/Thesis/Master-Thesis/Result3/Experiment_8'
+    path_2 = '/home/callisti/Thesis/Master-Thesis/Result3/Experiment_5'
+    print(path_1)
+    print(path_2)
+    final_path = '/home/callisti/Thesis/Master-Thesis/Result3'
+    MergeExp(path_1, path_2, final_path)
+
+        

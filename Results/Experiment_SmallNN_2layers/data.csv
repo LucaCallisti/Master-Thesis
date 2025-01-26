@@ -1,0 +1,10 @@
+Key,Value
+eta,0.01
+beta,0.99
+steps,50
+n_runs,3
+batch_size,1
+model,SimpleNN
+t0,0.0
+t1,0.5
+number_parameters,34

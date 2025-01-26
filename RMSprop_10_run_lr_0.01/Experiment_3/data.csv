@@ -1,0 +1,17 @@
+Key,Value
+optimizer,<class 'SDE.RMSprop_SDE'>
+eta,0.01
+beta,0.99
+steps,50
+n_runs,2
+batch_size,1
+dataset_size,128
+size_img,16
+model,CNN
+conv_layers,"[(3, 3, 1, 1), (2, 3, 1, 1), (2, 3, 1, 1), (1, 3, 1, 1)]"
+t0,0.0
+t1,0.5
+number_parameters,163
+time for run 1,00:36:30.35
+time for run 2,00:36:39.88
+total_time,01:13:10.29

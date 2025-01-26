@@ -190,6 +190,9 @@ def Square_root_matrix(matrix, diag = True):
     matrix is the cenetered data matrix with shape (m, n), where m is the number of samples and n is the number of features
     '''
     Sigma = torch.cov(matrix.T).clamp(min = -1e6, max = 1e6)
+    if torch.isnan(Sigma).any():
+        print('Warning: NaN values detected in Sigma')
+        breakpoint()
     if len(Sigma.shape) == 2:
         try:
             eigvals, eigvecs = torch.linalg.eigh(Sigma + 1e-6 * torch.eye(Sigma.shape[0], device=Sigma.device))
@@ -197,9 +200,14 @@ def Square_root_matrix(matrix, diag = True):
             try:
                 eigvals, eigvecs = torch.linalg.eigh(Sigma + 1e-4 * torch.eye(Sigma.shape[0], device=Sigma.device))
             except torch._C._LinAlgError:
-                eigvals, eigvecs = torch.linalg.eig(Sigma + 1e-4 * torch.eye(Sigma.shape[0], device=Sigma.device))
+                try:
+                    eigvals, eigvecs = torch.linalg.eig(Sigma + 1e-4 * torch.eye(Sigma.shape[0], device=Sigma.device))
+                except torch._C._LinAlgError:
+                    U, S, V = torch.svd(Sigma)
+                    eigvals = S
+                    eigvecs = V                  
+        
 
-        eigvals, eigvecs = torch.linalg.eigh(Sigma+1e-6*torch.eye(Sigma.shape[0], device=Sigma.device))
         eigvals = torch.clamp(eigvals, min=0)
         Sigma_sqrt = eigvecs @ torch.diag(torch.sqrt(eigvals)) @ eigvecs.T
     else:
@@ -215,49 +223,4 @@ def Square_root_matrix(matrix, diag = True):
             return Sigma_sqrt, Sigma
     return Sigma_sqrt
 
-        
-if __name__ == "__main__":
 
-    dataset = CIFAR10Dataset()
-    dataset.to_grayscale()
-    dataset.downscale(50)
-    num_classes = np.unique(dataset.y_train).shape[0]
-    input_channels, size_img, _ = dataset.get_image_size()
-
-    conv_layers = [
-        (2, 3, 1, 1),  # filter number, kernel size, stride, padding
-        (2, 3, 1, 1),
-        (1, 3, 1, 1),
-        (1, 3, 1, 1)
-    ]
-    # conv_layers = [
-    #     (4, 3, 1, 1),  
-    #     (8, 3, 1, 1),
-    #     (16, 3, 1, 1),
-    #     (32, 3, 1, 1)
-    # ]
-    model = CNN.CNN(input_channels=input_channels, num_classes=num_classes, conv_layers=conv_layers, size_img=size_img)
-
-    f_and_singma = function_f_and_Sigma(model, dataset)
-    print('Number of parameters:', f_and_singma.number_of_parameters)
-
-    model1 = CNN.CNN(input_channels=input_channels, num_classes=num_classes, conv_layers=conv_layers, size_img=size_img)
-    model1 = model1.to('cuda')
-    params, _ = extract_weights(model1)
-    input_params = torch.cat([p.view(-1) for p in params])
-    f_and_singma.update_parameters(input_params)
-
-    expected_loss_grad, all_grad_data = f_and_singma.compute_gradients_f()
-    Hessian = f_and_singma.compute_hessian_f_times_grad_f()
-    Sigma_sqrt, diag_Sigma = f_and_singma.apply_sigma()
-    grad_sigma_diag = f_and_singma.compute_gradients_sigma_diag_times_grad_f()
-    square_root_var_z_squared = f_and_singma.compute_var_z_squared()
-
-    breakpoint()
-    # Sanity check
-    print(torch.allclose(expected_loss_grad, torch.mean(all_grad_data, dim = 0)))  # True
-    
-    print(torch.allclose(Hessian, Hessian.T)) # False
-    print(torch.allclose(Hessian, Hessian.T, atol=1e-5)) # True
-
-    print(torch.allclose(Sigma_sqrt, Sigma_sqrt.T)) # True

@@ -29,6 +29,7 @@ class CNN(nn.Module):
         in_channels = in_channels * size_img * size_img
 
         self.fc = nn.Linear(int(in_channels), num_classes)
+        self.activation = nn.Tanh()
 
     
     def forward(self, x):
@@ -37,7 +38,7 @@ class CNN(nn.Module):
         for conv in self.conv_layers:
             x = conv(x)
             x = F.avg_pool2d(x, self.pool_size)
-            x = torch.nn.functional.gelu(x)
+            x = self.activation(x)
         x = torch.flatten(x, 1)
 
         x = self.fc(x)
@@ -101,7 +102,6 @@ def load_weights(mod: nn.Module, names: List[str], params: Tuple[Tensor, ...]) -
 
 
 def flatten_and_concat(tensor_list):
-    # Appiattisci ogni tensore nella lista e concatenali lungo la dimensione 1
     if len(tensor_list[0].shape) == 1:
         return torch.cat(tensor_list, dim=0)
     else:
@@ -112,7 +112,7 @@ def flatten_and_concat(tensor_list):
 
 
 class functional_CNN():
-    def __init__(self, model, loss_fn=nn.CrossEntropyLoss(reduction='none')):
+    def __init__(self, model):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device)
         self.number_parameters = model.get_number_parameters()
@@ -165,10 +165,7 @@ class functional_CNN():
     
     def my_funct(self, *params : Tuple[Tensor, ...]) -> Tensor:
         self.which_loss = 'none'
-        grad = self.jaconian(*params)       # grad_ij = (\partial_j f_i)_{i,j}
-        # grad_detach = grad.detach()         # grad_detach_ij = (\partial_j ~f_i)_{i,j}
-        # result = grad_detach.view(-1,1) * grad         # result_ij = (\partial_j ~f_i \partial_j f_i)_{i,j}
-        # result = (1/(grad.shape[0]-1)) * torch.sum(result, dim=0)  # result_j = ( \sum_i (\partial_j ~f_i \partial_j f_i) )_j
+        grad = self.jaconian(*params)      
         grad_squared = grad**2
         result = torch.mean(grad_squared, dim=0)
         return result
@@ -179,7 +176,6 @@ class functional_CNN():
         result = flatten_and_concat(result)         # dovrebbe mettere il contributo di grad_detach lungo le righe
         return result
 
-    
     def get_initial_params(self):
         return self.initial_params
     
@@ -269,7 +265,6 @@ class Train_n_times():
 
                     params = model.parameters()
                     params = torch.cat([p.view(-1) for p in params])
-                    # History[i+1] = {'model' : params, 'square_avg' : square_avg}
                     History['Square_avg'].append(square_avg)
                     History['Params'].append(params)
                     History['Grad'].append(torch.cat([gradients[name].view(-1) for name in gradients]))
@@ -324,8 +319,6 @@ class Train_n_times():
     def save_dict(self, path):
         torch.save(self.Different_run, path)
             
-        
-    
     def get_model(self):
         return self.model
     

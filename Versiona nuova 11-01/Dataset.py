@@ -13,6 +13,8 @@ class CIFAR10Dataset:
         self.x_test = torch.tensor(self.x_test, dtype=torch.float32).permute(0, 3, 1, 2)
         self.y_train = torch.tensor(self.y_train, dtype=torch.int64).squeeze()
         self.y_test = torch.tensor(self.y_test, dtype=torch.int64).squeeze()
+
+        torch.manual_seed(0)
         indices = torch.randperm(self.x_train.shape[0])
         self.x_train = self.x_train[indices]
         self.y_train = self.y_train[indices]

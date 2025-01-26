@@ -1,0 +1,9 @@
+Key,Value
+eta,0.01
+beta,0.99
+steps,50.0
+n_runs,3.0
+t0,0.0
+t1,0.5
+number_parameters,4.0
+model,Small_NN
