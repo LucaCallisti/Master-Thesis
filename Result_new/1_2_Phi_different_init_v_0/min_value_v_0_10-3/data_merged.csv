@@ -1,0 +1,21 @@
+Key,Value
+optimizer,<class 'SDE.RMSprop_SDE'>
+eta,0.1
+beta,0.9
+steps,50
+n_runs,1
+batch_size,1
+dataset_size,128
+size_img,16
+model,CNN
+conv_layers,"[(3, 3, 1, 1), (2, 3, 1, 1), (2, 3, 1, 1), (1, 3, 1, 1)]"
+t0,0.1
+t1,5.0
+number_parameters,163
+Regularizer_1_order,<SDE.Regularizer_Phi object at 0x7f6a7c80f820>
+Regularizer_2_order,<SDE.Regularizer_Phi object at 0x7f6aa2dd86a0>
+eps for reg 2 order,1e-10
+min value init v_0,0.001
+time for run 1,00:03:34.81
+time for run 2,00:03:44.88
+time for run 2,00:03:42.09
