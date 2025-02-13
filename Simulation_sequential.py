@@ -29,13 +29,14 @@ def Simulation_discrete_dynamics(model, dataset, steps, lr, beta, n_runs, batch_
     FinalDict = Train.train_n_times(n = n_runs, batch_size=batch_size)
     return FinalDict
 
-def simulation(n_experiment):
+def simulation(eta, beta, n_experiment, folder_name = ''):
     dataset = CIFAR10Dataset()
     num_classes = np.unique(dataset.y_train).shape[0]
     input_channels, size_img, _ = dataset.get_image_size()
     dataset_size = dataset.x_train.shape[0]
 
-    save_funz = Save_exp.SaveExp('/home/callisti/Thesis/Master-Thesis/Result_new', n_experiment)
+    if folder_name != '': folder_name = folder_name + '/'
+    save_funz = Save_exp.SaveExp('/home/callisti/Thesis/Master-Thesis/Result_new/'+folder_name, n_experiment)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     conv_layers = [
@@ -46,7 +47,9 @@ def simulation(n_experiment):
     ]
 
     steps, n_runs = 50, 1
-    eta, beta = 0.1, 0.9
+    # eta, beta = 0.1
+    # beta = 1-0.5*eta
+    steps = round(3/eta)
     print(f'eta: {eta}, beta: {beta}, steps: {steps}, n_runs: {n_runs}, total steps per run: {steps / eta}')
 
     random_seed = torch.seed()
@@ -58,8 +61,8 @@ def simulation(n_experiment):
     t0, t1 = eta, (steps * eta)  
     t = torch.linspace(t0, t1, steps)
     number_parameters = FinalDict[1]['Params'][0].shape[0]
-
-    save_funz.add_multiple_elements(['optimizer', 'eta', 'beta', 'steps', 'n_runs', 'batch_size', 'dataset_size', 'size_img', 'model', 'conv_layers', 't0', 't1', 'number_parameters'], [RMSprop_SDE, eta, beta, steps, n_runs, 1, dataset_size, size_img, 'CNN', conv_layers, t0, t1, number_parameters])
+    c=(1-eta)/beta
+    save_funz.add_multiple_elements(['optimizer', 'eta', 'beta', 'c', 'steps', 'n_runs', 'batch_size', 'dataset_size', 'size_img', 'model', 'conv_layers', 't0', 't1', 'number_parameters'], [RMSprop_SDE, eta, beta, c, steps, n_runs, 1, dataset_size, size_img, 'CNN', conv_layers, t0, t1, number_parameters])
 
     eps_reg = 1e-8
     Reg_sde_2 = Regularizer_Phi(eps_reg)
@@ -119,7 +122,22 @@ def simulation(n_experiment):
  
 
 if __name__ == "__main__":
-    exp = 1
-    print('Experiment:', exp)
-    simulation(n_experiment = exp)
+    Exp = [1, 2, 3, 4, 5, 6]
+    for exp in Exp:
+        print('Experiment:', exp)
+        eta = 10**(-exp/3)
+        beta = 1-2*eta
+        simulation(eta, beta, n_experiment = exp, folder_name = 'Slope_c_2')
+
+    # eta = 0.1
+    # beta = 1-eta
+    # simulation(0.1, beta, n_experiment = 1, folder_name = 'different_c')
+
+    # eta = 0.1
+    # beta = 1-2*eta
+    # simulation(0.1, beta, n_experiment = 2, folder_name = 'different_c')
+
+    # eta = 0.1
+    # beta = 1-0.5*eta
+    # simulation(0.1, beta, n_experiment = 3, folder_name = 'different_c')
     

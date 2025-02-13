@@ -105,6 +105,7 @@ class Merge_simulation():
                 merged_data = pd.concat([merged_data, df], ignore_index=True)
 
         merged_data.to_csv(os.path.join(self.path_folder, 'data_merged.csv'), index=False)
+        return merged_data
 
     def merge_final_dicts(self):
         merged_final_dict = {}
@@ -136,7 +137,7 @@ class Merge_simulation():
         return merged_list
 
     def merge_results(self, Plot = True):
-        self.merge_data()
+        data_csv = self.merge_data()
         grad_1_order = self.merge_list('Grad_1_order.pt')
         loss_1_order = self.merge_list('Loss_1_order.pt')
         result_1_order = self.merge_list('Result_1_order.pt')
@@ -144,6 +145,7 @@ class Merge_simulation():
         loss_2_order = self.merge_list('Loss_2_order.pt')
         result_2_order = self.merge_list('Result_2_order.pt')
         FinalDict = self.merge_final_dicts()
+        self.FinalError(data_csv, FinalDict, loss_1_order, loss_2_order, result_1_order, result_2_order)
 
         if Plot:
             FinalDict = convert_lists_to_tensors(FinalDict)
@@ -153,7 +155,52 @@ class Merge_simulation():
             plot.plot_grad(grad_1_order, 1)
             plot.plot_grad(grad_2_order, 2)
             plot.plot_comparison_1_and_2_order(result_1_order, result_2_order, loss_1_order, loss_2_order, FinalDict)
+            plot.plot_Brownian_motion(result_2_order)
 
+    def FinalError(self, data_csv, FinalDict, Loss_1, Loss_2, Result_1, Result_2, step = -1):
+        data = {'eta': float(data_csv.loc[data_csv['Key'] == 'eta', 'Value'].values[0])}
+        total_step = float(data_csv.loc[data_csv['Key'] == 'steps', 'Value'].values[0])
+        if step == -1:
+            step = int(total_step)
+        assert step <= total_step, 'Step is bigger than the total number of steps'
+        step = step-1
+        data['step'] = step
+        print('Step:', step)
+        def aux(tensors):
+            if isinstance(tensors, list): tensors = torch.stack(tensors)
+            tensor = tensors[:, step]
+            if len(tensor.shape) == 2: 
+                tensor = torch.norm(tensor, dim = 1)
+            mean_tensor = torch.mean(tensor, dim = 0)
+            return mean_tensor
+
+        # final_l1 = aux(Loss_1)
+        # final_l2 = aux(Loss_2)
+        Result_1 = torch.stack(Result_1).squeeze()
+        number_parameters = Result_1[0].shape[1] // 3
+        final_p1 = aux(Result_1[:, :, :number_parameters])
+        final_v1 = aux(Result_1[:, :, number_parameters:2*number_parameters])
+        Result_2 = torch.stack(Result_2).squeeze()
+        final_p2 = aux(Result_2[:, :,:number_parameters])
+        final_v2 = aux(Result_2[:, :,number_parameters:2*number_parameters])
+
+        loss_d, Params_d, v_d = [], [], []
+        for k in FinalDict.keys():
+            loss_d.append(FinalDict[k]['Loss'][step])
+            Params_d.append(torch.tensor(FinalDict[k]['Params'][step]))
+            v_d.append(torch.tensor(FinalDict[k]['Square_avg'][step]))
+        final_l_d = torch.mean(torch.tensor(loss_d))
+        final_p_d = torch.mean(torch.norm(torch.stack(Params_d, dim = 0), dim = 1))
+        final_v_d = torch.mean(torch.norm(torch.stack(v_d, dim = 0), dim = 1))
+
+        # data['Error_Loss_1'] = torch.abs(final_l1 - final_l_d).item()
+        # data['Error_Loss_2'] = torch.abs(final_l2 - final_l_d).item()
+        data['Error_Params_order_1'] = torch.abs(final_p1 - final_p_d).item()
+        data['Error_Params_order_2'] = torch.abs(final_p2 - final_p_d).item()
+        data['Error_Square_avg_order_1'] = torch.abs(final_v1 - final_v_d).item()
+        data['Error_Square_avg_order_2'] = torch.abs(final_v2 - final_v_d).item()
+        with open(os.path.join(self.path_folder, 'FinalError.json'), 'w') as file:
+            json.dump(data, file, indent=4)
 
 
 class My_plot():
@@ -236,6 +283,7 @@ class My_plot():
                 data_square_avg.append({'step': step, 'error': error_square_avg[step].item()})
             return pd.DataFrame(data_grad), pd.DataFrame(data_square_avg)
         def aux_loss(loss, FinalDict):
+            warning = ''
             loss_c = torch.stack(loss)
             loss_c = torch.mean(loss_c, dim = 0)
             loss_d = []
@@ -244,25 +292,75 @@ class My_plot():
                 loss_d.append(FinalDict[i_run]['Loss'].clone().detach())
             loss_d = torch.stack(loss_d)
             loss_d = torch.mean(loss_d, dim = 0)
+            if loss_d.shape[0] != loss_c.shape[0]:
+                print('error in loss shape', loss_d.shape, loss_c.shape)
+                min_shape = min(loss_d.shape[0], loss_c.shape[0])
+                loss_d = loss_d[:min_shape]
+                loss_c = loss_c[:min_shape]
+                warning = 'cutted'
             error = torch.abs(loss_d - loss_c)
             data = []
             for step in range(loss_c.shape[0]):
                 data.append({'step': step, 'error': error[step].item()})
-            return pd.DataFrame(data)
+            return pd.DataFrame(data), warning
         gradient_norm_1, square_avg_norm_1 = aux_res(res_1, FinalDict)
         gradient_norm_2, square_avg_norm_2 = aux_res(res_2, FinalDict)
         self.my_plot([gradient_norm_1, gradient_norm_2], ['1 order', '2 order'], 'Parameter Comparison', y = 'error')
         self.my_plot([square_avg_norm_1, square_avg_norm_2], ['1 order', '2 order'], 'Square_avg Comparison', y = 'error')
-        loss_error_1 = aux_loss(Loss_1, FinalDict)
-        loss_error_2 = aux_loss(Loss_2, FinalDict)
-        self.my_plot([loss_error_1, loss_error_2], ['1 order', '2 order'], 'Loss Comparison', y = 'error')
+        loss_error_1, w1 = aux_loss(Loss_1, FinalDict)
+        loss_error_2, w2 = aux_loss(Loss_2, FinalDict)
+        if 'cutted' in w1 or 'cutted' in w2: warning = 'cutted'
+        else: warning = ''
+        self.my_plot([loss_error_1, loss_error_2], ['1 order', '2 order'], 'Loss Comparison'+warning, y = 'error')
 
+    def plot_Brownian_motion(self, result):
+        result = torch.stack(result).squeeze()
+        if len(result.shape) == 2:
+            result = result.unsqueeze(0)
+        number_parameters = result.shape[2] // 3
+        Bmotion = result[:, :, 2*number_parameters:]
+        BM_norm = torch.norm(Bmotion, dim = 2)
+        data = []
+        for i in range(BM_norm.shape[0]):
+            for step in range(BM_norm.shape[1]):
+                data.append({'step': step, 'BM_norm': BM_norm[i, step].item(), 'run': i})
+        df = pd.DataFrame(data)
+        self.my_plot([df], [''], 'Brownian_motion', y = 'BM_norm')
+
+def Plot_error_different_eta(path_folder, subfolders_number = None):
+    if subfolders_number is None:
+        subfolders_number = [int(d.split('_')[1]) for d in os.listdir(path_folder) if os.path.isdir(os.path.join(path_folder, d)) and d.startswith('Experiment_') and d.split('_')[1].isdigit()]
+    all_errors = []
+    for num in subfolders_number:
+        final_error_file = os.path.join(path_folder, f'Experiment_{num}/FinalError.json')
+        if os.path.exists(final_error_file):
+            with open(final_error_file, 'r') as file:
+                final_error_data = json.load(file)
+                all_errors.append(final_error_data)
+
+    df_errors = pd.DataFrame(all_errors)
+    def aux(df, x, y1, y2, title):
+        sns.scatterplot(data=df, x=x, y=y1, label=y1)
+        sns.scatterplot(data=df, x=x, y=y2, label=y2)
+        plt.xscale('log')
+        plt.yscale('log')
+        plt.xlabel('Eta')
+        plt.title(title)
+        plt.savefig(os.path.join(path_folder, title))
+        plt.close()
+    print(df_errors)
+    aux(df_errors, 'eta', 'Error_Params_order_1', 'Error_Params_order_2', 'Error_Params')
+    aux(df_errors, 'eta', 'Error_Square_avg_order_1', 'Error_Square_avg_order_2', 'Error_Square_avg')
 
 if __name__ == "__main__":
-    num = 1
-    print('Experiment number:', num)
-    path_folder = '/home/callisti/Thesis/Master-Thesis/Result_new/Experiment_'+str(num)
-    merge = Merge_simulation(path_folder)
-    merge.merge_data()
-    merge.merge_final_dicts()
-    merge.merge_results()
+    Numbers = [1,2,3, 4, 5]
+    for num in Numbers:
+        print('Experiment number:', num)
+        path_folder = '/home/callisti/Thesis/Master-Thesis/Result_new/Slope_c_0.5/Experiment_'+str(num)
+        merge = Merge_simulation(path_folder)
+        merge.merge_data()
+        merge.merge_final_dicts()
+        merge.merge_results()
+
+    path_folder = '/home/callisti/Thesis/Master-Thesis/Result_new/Slope_c_0.5'
+    Plot_error_different_eta(path_folder, subfolders_number= Numbers)

@@ -1,6 +1,6 @@
 import torch.multiprocessing as mp
 from CNN import CNN, Train_n_times
-from SDE import RMSprop_SDE, RMSprop_SDE_1_order
+from SDE import RMSprop_SDE, RMSprop_SDE_1_order, Regularizer_Phi, Regularizer_Phi_cost, Regularizer_arora, Regularizer_identity
 from Dataset import CIFAR10Dataset
 from calculation import function_f_and_Sigma
 import Save_exp_multiprocess as Save_exp
@@ -17,10 +17,6 @@ def create_dataset(dataset_size=128):
     Crea e ritorna un dataset preprocessato.
     """
     dataset = CIFAR10Dataset()
-    dataset.to_grayscale()
-    dataset.downscale(50)
-    dataset.x_train = dataset.x_train[:dataset_size]
-    dataset.y_train = dataset.y_train[:dataset_size]
     return dataset
 
 def Simulation_discrete_dynamics(model, dataset, steps, lr, beta, n_runs, batch_size=1):
@@ -41,6 +37,10 @@ def simulate_continuous_dynamics(FinalDict, args, dataset, t, eta, beta, device)
     number_parameters = FinalDict[1]['Params'][0].shape[0]
     x0 = torch.zeros(3 * number_parameters, device=device)
 
+    eps_reg = 1e-8
+    Reg_sde_2 = Regularizer_Phi(eps_reg)
+    Reg_sde_1 = Regularizer_Phi(eps_reg)
+
     Result_1_order = []
     Result_2_order = []
     Loss_1_order = []
@@ -55,14 +55,14 @@ def simulate_continuous_dynamics(FinalDict, args, dataset, t, eta, beta, device)
         x0[: 2 * number_parameters] = torch.cat((FinalDict[i_run]['Params'][0], FinalDict[i_run]['Square_avg'][0]), dim=0)
 
         # Simulazione con RMSprop_SDE_1_order
-        sde_1_order = RMSprop_SDE_1_order(eta, beta, f, All_time=t, Verbose=False)
+        sde_1_order = RMSprop_SDE_1_order(eta, beta, f, All_time=t, regularizer=Reg_sde_1, Verbose=False)
         aux = torchsde.sdeint(sde_1_order, x0.unsqueeze(0).to(device), t, method='euler', dt=eta)
         Result_1_order.append(aux)
         Loss_1_order.append(sde_1_order.get_loss())
         Grad_1_order.append(sde_1_order.get_loss_grad())
 
         # Simulazione con RMSprop_SDE (2° ordine)
-        sde_2_order = RMSprop_SDE(eta, beta, f, All_time=t, Verbose=False)
+        sde_2_order = RMSprop_SDE(eta, beta, f, All_time=t, regularizer=Reg_sde_2, Verbose=False)
         aux = torchsde.sdeint(sde_2_order, x0.unsqueeze(0).to(device), t, method='euler', dt=eta**2)
         Result_2_order.append(aux)
         Loss_2_order.append(sde_2_order.get_loss())

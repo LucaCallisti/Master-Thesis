@@ -85,8 +85,8 @@ class RMSprop_SDE(torchsde.SDEIto):
         denom = 1/(torch.sqrt(v_reg) + self.eps)
 
         M_theta = torch.sqrt(self.eta) * torch.diag(denom) @ self.Sigma_sqrt
-        # M_v = -2 * torch.sqrt(self.eta) * self.c * torch.diag(self.f_grad) @  self.Sigma_sqrt + torch.sqrt(torch.tensor(2)) * self.c * self.square_root_var_z_squared @ torch.diag(w)
-        M_v = -2 * torch.sqrt(self.eta) * self.c * torch.diag(self.f_grad) @  self.Sigma_sqrt
+        M_v = -2 * torch.sqrt(self.eta) * self.c * torch.diag(self.f_grad) @  self.Sigma_sqrt + torch.sqrt(torch.tensor(2)) * self.c * self.square_root_var_z_squared @ torch.diag(w)
+        # M_v = -2 * torch.sqrt(self.eta) * self.c * torch.diag(self.f_grad) @  self.Sigma_sqrt
         M_w = torch.eye(M_theta.shape[0], device = M_theta.device)
         self.diffusion = torch.concat((M_theta, M_v, M_w), dim = 0).unsqueeze(0)
 
@@ -111,8 +111,7 @@ class RMSprop_SDE(torchsde.SDEIto):
         self.grad_expected_frad_f_squared = self.function_f_and_Sigma.compute_gradients_expected_grad_f_squared()
         self.square_root_var_z_squared = self.function_f_and_Sigma.compute_var_z_squared()
 
-        if torch.any(torch.isclose(self.All_time, t, atol=self.eta**2 / 3)):
-            # print('salvo loss', t)
+        if torch.any(torch.isclose(self.All_time, t, atol=self.eta**2 / 2)):
             self.Loss_grad.append(self.f_grad.cpu())
             self.Loss.append(self.function_f_and_Sigma.compute_f().cpu())
 
@@ -283,10 +282,8 @@ class RMSprop_SDE_1_order(torchsde.SDEIto):
         self.f_grad = self.function_f_and_Sigma.compute_gradients_f() 
         self.Sigma_sqrt, self.diag_Sigma = self.function_f_and_Sigma.compute_sigma()
 
-        if torch.any(torch.isclose(self.All_time, t, atol=self.eta/3)):
-            # print('salvo loss', t)
-            self.Loss_grad.append(self.f_grad.cpu())
-            self.Loss.append(self.function_f_and_Sigma.compute_f().cpu())
+        self.Loss_grad.append(self.f_grad.cpu())
+        self.Loss.append(self.function_f_and_Sigma.compute_f().cpu())
 
     def get_loss_grad(self):
         return torch.stack(self.Loss_grad).cpu()
